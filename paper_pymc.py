@@ -3,6 +3,15 @@ import arviz as az
 import pytensor.tensor as pt
 
 
+# Experimenting Code:
+# from functools import partial
+# rng = np.random.default_rng()
+# draw = partial(pm.draw, random_seed=rng)
+# 
+# normal_dist = pm.Normal.dist(mu=1)
+# draw(normal_dist)
+
+
 lambda_1 = lambda_2 = 0.5
 beta_1 = beta_2 = 0.01
 

@@ -2,10 +2,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
-from scipy.stats import bernoulli, dirichlet, binom, beta
+from scipy.stats import bernoulli, dirichlet, binom, beta, multinomial
 
 
-TINY_CONST = 1e-100
+TINY_CONST = 1e-10
 
 
 # Simulation parameters
@@ -59,14 +59,13 @@ strategy_b_q_matrix = np.array([
 ])
 
 q = np.stack([strategy_a_q_matrix, strategy_b_q_matrix]).transpose(1, 2, 0)
-q_ext = q[np.newaxis, :, :, :]
 
 n_attributes = strategy_a_q_matrix.shape[1]  # K attributes
 n_strategies = len(np.unique(strategy_a_q_matrix))  # M strategies
 n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
-n_examinees = 10
+n_examinees = 100
 
-EM = 30  # ???
+EM = 250  # ???
 BI = int(EM / 2)
 repititions = 1  # number of repitions
 
@@ -75,15 +74,30 @@ repititions = 1  # number of repitions
 # j : Item
 # k : Attribute
 
-# TODO !!!! THIS NEEDS TO BE UPDATED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-score = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_items)))
-
 # parameters
+true_slipping = 0.3
+true_guessing = 0.1
+
 alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
 mu = np.array(beta.rvs(lambda_1, lambda_2, size=n_strategies))
 pi = dirichlet.rvs([beta_1, beta_2], size=1).flatten()
-s_c = np.ones((n_items, n_strategies)) * (1 - 0.5)
-g = np.ones((n_items, n_strategies)) * 0.5
+s_c = np.ones((n_items, n_strategies)) * (1 - true_slipping)
+g = np.ones((n_items, n_strategies)) * true_guessing
+c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
+
+# build score from item response function
+eta = np.zeros(shape=(n_examinees, n_items, n_strategies))
+for i in range(n_examinees):
+    for j in range(n_items):
+        for m in range(n_strategies):
+            eta[i, j, m] = np.sum([alpha[i, k] * q[j, k, m] for k in range(n_attributes)])
+
+score = np.zeros(shape=(n_examinees, n_items))
+for i in range(n_examinees):
+    for j in range(n_items):
+        score[i, j] = np.round(np.sum([pi[m] * (1 - true_slipping) ** eta[i, j, m] * true_guessing ** eta[i, j, m] for m in range(n_strategies)]))
+
+score = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_items)))
 
 # track c, s, g
 c_hat = np.zeros((repititions, EM, n_examinees))
@@ -120,7 +134,7 @@ for rep in range(repititions):
                     #  p_ijm ^ u_ij * (1 - p_ijm) ^ (1 - u_ij)
                     p[strategy] = tem if score[examinee, item] == 1 else 1 - tem
 
-                    LL[strategy] = LL[strategy] * (p[strategy] + TINY_CONST) # likelihood
+                    LL[strategy] = LL[strategy] * np.maximum(p[strategy], TINY_CONST) # likelihood
 
                 L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
                 Lc[strategy] = L[strategy] * LL[strategy] * pi[strategy]  # posterior
@@ -149,7 +163,7 @@ for rep in range(repititions):
                 tem_new = (s_c[item, strategy_membership] ** yita_new) * (g[item, strategy_membership] ** (1 - yita_new))
 
                 if score[examinee, item] == 1:
-                    temp = tem_new / (temm + TINY_CONST)
+                    temp = tem_new / np.maximum(temm, TINY_CONST)
                 else:
                     temp = (1 - tem_new) / (1 - temm)
 
@@ -167,13 +181,10 @@ for rep in range(repititions):
 
         for item in range(n_items):
             for strategy in range(n_strategies):
-                # TODO replace this with a 4 beta distribution
-                temp1_g = 0.2
-                temp2_g = 0.0
-                temp1_s_c = 0.8
-                temp2_s_c = 0.6
-                g_new[item, strategy] = np.random.randint(np.floor(temp2_g * 1000), np.floor(temp1_g * 1000)) / 1000
-                s_c_new[item, strategy] = np.random.randint(np.floor(temp2_s_c * 1000), np.floor(temp1_s_c * 1000)) / 1000
+                # g_new[item, strategy] = np.random.uniform(0.1, 0.3)
+                # s_c_new[item, strategy] = np.random.uniform(0.7, 0.9)
+                g_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
+                s_c_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
 
             LLb1 = 1
             LLb2 = 1
@@ -191,7 +202,7 @@ for rep in range(repititions):
                     tem_new = (s_c_new[item, strategy_membership] ** yitat) * (g_new[item, strategy_membership] ** (1 - yitat))
 
                     if score[examinee, item] == 1:
-                        p = (tem + TINY_CONST)
+                        p = np.maximum(tem, TINY_CONST)
                         p_new = tem_new
                     else:
                         p = 1 - tem
@@ -204,14 +215,14 @@ for rep in range(repititions):
                     yitw = 1
 
                     for attribute in range(n_attributes):
-                        yiw = alpha[examinee, attribute] * q[item, attribute, strategy_membership]
+                        yiw = alpha[examinee, attribute] ** q[item, attribute, strategy_membership]
                         yitw = yitw * yiw
 
                     tem = (s_c[item, strategy_membership] ** yitw) * (g[item, strategy_membership] ** (1 - yitw))
-                    tem_new = (s_c_new[item, strategy_membership] ** yitw) * (g[item, strategy_membership] ** (1 - yitw))
+                    tem_new = (s_c_new[item, strategy_membership] ** yitw) * (g_new[item, strategy_membership] ** (1 - yitw))
 
                     if score[examinee, item] == 1:
-                        p = (tem + TINY_CONST)
+                        p = np.maximum(tem, TINY_CONST)
                         p_new = tem_new
                     else:
                         p = 1 - tem
@@ -225,7 +236,7 @@ for rep in range(repititions):
                 g[item, 0] = g_new[item, 0]
                 s_c[item, 0] = s_c_new[item, 0]
 
-            t = np.random.rand()
+            # t = np.random.rand()
             if LLb2 >= t:
                 g[item, 1] = g_new[item, 1]
                 s_c[item, 1] = s_c_new[item, 1]
@@ -293,10 +304,10 @@ for rep in range(repititions):
     # some plotting
     slipping_trace = np.mean(1 - slipping[rep], axis=1)
     guessing_trace = np.mean(guessing[rep], axis=1)
-    plt.plot(np.arange(EM), slipping_trace[:, 0], label='slipping strategy 0')
-    plt.plot(np.arange(EM), slipping_trace[:, 1], label='slipping strategy 1')
-    plt.plot(np.arange(EM), guessing_trace[:, 0], label='guessing strategy 0')
-    plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 1')
+    plt.plot(np.arange(EM), slipping_trace[:, 0], label='slipping strategy 1')
+    plt.plot(np.arange(EM), slipping_trace[:, 1], label='slipping strategy 2')
+    plt.plot(np.arange(EM), guessing_trace[:, 0], label='guessing strategy 1')
+    plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 2')
     plt.legend()
     plt.show()
 

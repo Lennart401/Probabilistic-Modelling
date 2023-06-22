@@ -65,7 +65,7 @@ n_strategies = len(np.unique(strategy_a_q_matrix))  # M strategies
 n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
 n_examinees = 100
 
-EM = 250  # ???
+EM = 150  # ???
 BI = int(EM / 2)
 repititions = 1  # number of repitions
 
@@ -102,6 +102,7 @@ score = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_items)))
 # track c, s, g
 c_hat = np.zeros((repititions, EM, n_examinees))
 pi_hat = np.zeros((repititions, EM, n_strategies))
+mu_hat = np.zeros((repititions, EM, n_strategies))
 slipping = np.zeros((repititions, EM, n_items, n_strategies))
 guessing = np.zeros((repititions, EM, n_items, n_strategies))
 alpha_hat = np.zeros((repititions, EM, n_examinees, n_attributes))
@@ -186,60 +187,30 @@ for rep in range(repititions):
                 g_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
                 s_c_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
 
-            LLb1 = 1
-            LLb2 = 1
+            likelihood = np.ones(n_strategies)
 
+
+            # { PROD i=1 to N: [ p_ijm ^ u_ij * (1 - p_ijm) ^ (1 - u_ij) ] ^ c_j ] ^ I(c_i = m) } Beta(s_jm) x Beta(g_jm)
             for examinee in range(n_examinees):
                 strategy_membership = int(c[examinee])
-                if strategy_membership == 0:
-                    yitat = 1
+                eta = np.prod([alpha[examinee, attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
 
-                    for attribute in range(n_attributes):
-                        yit = alpha[examinee, attribute] ** q[item, attribute, strategy_membership]
-                        yitat = yitat * yit
+                tem = (s_c[item, strategy_membership] ** eta) * (g[item, strategy_membership] ** (1 - eta))
+                tem_new = (s_c_new[item, strategy_membership] ** eta) * (g_new[item, strategy_membership] ** (1 - eta))
 
-                    tem = (s_c[item, strategy_membership] ** yitat) * (g[item, strategy_membership] ** (1 - yitat))
-                    tem_new = (s_c_new[item, strategy_membership] ** yitat) * (g_new[item, strategy_membership] ** (1 - yitat))
+                if score[examinee, item] == 1:
+                    p = np.maximum(tem, TINY_CONST)
+                    p_new = tem_new
+                else:
+                    p = 1 - tem
+                    p_new = 1 - tem_new
 
-                    if score[examinee, item] == 1:
-                        p = np.maximum(tem, TINY_CONST)
-                        p_new = tem_new
-                    else:
-                        p = 1 - tem
-                        p_new = 1 - tem_new
+                likelihood[strategy_membership] = likelihood[strategy_membership] * (p_new / p)
 
-                    temp1 = p_new / p
-                    LLb1 = LLb1 * temp1
-
-                else:  # strategy_membership == 1
-                    yitw = 1
-
-                    for attribute in range(n_attributes):
-                        yiw = alpha[examinee, attribute] ** q[item, attribute, strategy_membership]
-                        yitw = yitw * yiw
-
-                    tem = (s_c[item, strategy_membership] ** yitw) * (g[item, strategy_membership] ** (1 - yitw))
-                    tem_new = (s_c_new[item, strategy_membership] ** yitw) * (g_new[item, strategy_membership] ** (1 - yitw))
-
-                    if score[examinee, item] == 1:
-                        p = np.maximum(tem, TINY_CONST)
-                        p_new = tem_new
-                    else:
-                        p = 1 - tem
-                        p_new = 1 - tem_new
-
-                    temp2 = p_new / p
-                    LLb2 = LLb2 * temp2
-
-            t = np.random.rand()
-            if LLb1 >= t:
-                g[item, 0] = g_new[item, 0]
-                s_c[item, 0] = s_c_new[item, 0]
-
-            # t = np.random.rand()
-            if LLb2 >= t:
-                g[item, 1] = g_new[item, 1]
-                s_c[item, 1] = s_c_new[item, 1]
+            for strategy in range(n_strategies):
+                if likelihood[strategy] >= np.random.rand():
+                    g[item, strategy] = g_new[item, strategy]
+                    s_c[item, strategy] = s_c_new[item, strategy]
 
         slipping[rep, WWW] = s_c
         guessing[rep, WWW] = g
@@ -258,6 +229,9 @@ for rep in range(repititions):
         pi_hat[rep, WWW] = pi
 
         # draw mu
+        num_attributes = np.sum(alpha, axis=1)
+        attr_sum = [np.sum(num_attributes[c == m]) for m in range(n_strategies)]
+
         aa = np.sum(alpha, axis=1)
         rrt1 = 0
         rrt2 = 0
@@ -273,10 +247,12 @@ for rep in range(repititions):
         ddt2 = n_examinees * n_attributes + lambda_2 - rrt1
         dd3 = rrt2 + lambda_1
         dd4 = n_examinees * n_attributes + lambda_2 - rrt2
+        # [np.random.beta(attr_sum[m] + lambda_1, alpha.size - attr_sum[m] + lambda_2) for m in range(n_strategies)]
 
         mu1 = np.random.beta(ddt1, ddt2)
         mu2 = np.random.beta(dd3, dd4)
         mu = np.array([mu1, mu2])
+        mu_hat[rep, WWW] = mu
 
         # If were are past the burn-in period, the sum alpha, s and g to get an average value of them
         if WWW >= EM - BI:
@@ -308,6 +284,18 @@ for rep in range(repititions):
     plt.plot(np.arange(EM), slipping_trace[:, 1], label='slipping strategy 2')
     plt.plot(np.arange(EM), guessing_trace[:, 0], label='guessing strategy 1')
     plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 2')
+    plt.legend()
+    plt.show()
+
+    plt.plot(pi_hat[rep, :, 0], label='strategy 1')
+    plt.plot(pi_hat[rep, :, 1], label='strategy 2')
+    plt.suptitle('pi')
+    plt.legend()
+    plt.show()
+
+    plt.plot(mu_hat[rep, :, 0], label='strategy 1')
+    plt.plot(mu_hat[rep, :, 1], label='strategy 2')
+    plt.suptitle('mu')
     plt.legend()
     plt.show()
 

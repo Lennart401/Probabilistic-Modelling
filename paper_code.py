@@ -11,6 +11,7 @@ TINY_CONST = 1e-10
 # Simulation parameters
 lambda_1 = lambda_2 = 0.5
 beta_1 = beta_2 = 0.01
+beta_all = np.array([beta_1, beta_2])
 
 strategy_a_q_matrix = np.array([
     [1, 1, 1, 1, 0],
@@ -63,9 +64,9 @@ q = np.stack([strategy_a_q_matrix, strategy_b_q_matrix]).transpose(1, 2, 0)
 n_attributes = strategy_a_q_matrix.shape[1]  # K attributes
 n_strategies = len(np.unique(strategy_a_q_matrix))  # M strategies
 n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
-n_examinees = 100
+n_examinees = 50
 
-EM = 150  # ???
+EM = 200  # ???
 BI = int(EM / 2)
 repititions = 1  # number of repitions
 
@@ -80,7 +81,7 @@ true_guessing = 0.1
 
 alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
 mu = np.array(beta.rvs(lambda_1, lambda_2, size=n_strategies))
-pi = dirichlet.rvs([beta_1, beta_2], size=1).flatten()
+pi = dirichlet.rvs(beta_all, size=1).flatten()
 s_c = np.ones((n_items, n_strategies)) * (1 - true_slipping)
 g = np.ones((n_items, n_strategies)) * true_guessing
 c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
@@ -113,43 +114,58 @@ alpha_sum = np.zeros((n_examinees, n_attributes))
 s_c_sum = np.zeros((n_items, n_strategies))
 g_sum = np.zeros((n_items, n_strategies))
 
+
 for rep in range(repititions):
     print('\nRepition: ', rep)
     for WWW in tqdm(range(EM)):
-        # draw c (strategy membership parameter)
-        c = np.zeros(n_examinees)
-        for examinee in range(n_examinees):
-            LL = np.ones(n_strategies)
-            Lc = np.ones(n_strategies)
-            L = np.ones(n_strategies)
-            eta = np.ones(n_strategies)
-            p = np.ones(n_strategies)
+        # draw pi
+        membership_counts = np.array([np.sum(c == m) for m in range(n_strategies)])
+        membership_counts = np.flip(membership_counts)
+        pi = dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
+        pi_hat[rep, WWW] = pi
 
+        # draw c (strategy membership parameter)
+        for examinee in range(n_examinees):
+            # p(c_i = m | all other parameters)
+            Lc = np.ones(n_strategies)
             for strategy in range(n_strategies):
+                likelihood = 1
                 for item in range(n_items):
-                    eta[strategy] = np.prod([alpha[examinee, attribute] ** q[item, attribute, strategy] for attribute in range(n_attributes)])
+                    eta = np.prod([alpha[examinee, attribute] ** q[item, attribute, strategy] for attribute in range(n_attributes)])
 
                     # some kinda likelihood
-                    tem = (s_c[item, strategy] ** eta[strategy]) * (g[item, strategy] ** (1-eta[strategy]))
+                    tem = (s_c[item, strategy] ** eta) * (g[item, strategy] ** (1-eta))
 
                     #  p_ijm ^ u_ij * (1 - p_ijm) ^ (1 - u_ij)
-                    p[strategy] = tem if score[examinee, item] == 1 else 1 - tem
+                    p = tem if score[examinee, item] == 1 else 1 - tem
+                    likelihood *= np.maximum(p, TINY_CONST) # likelihood
 
-                    LL[strategy] = LL[strategy] * np.maximum(p[strategy], TINY_CONST) # likelihood
-
-                L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
-                Lc[strategy] = L[strategy] * LL[strategy] * pi[strategy]  # posterior
+                # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
+                prior = np.prod([bernoulli.pmf(alpha[examinee, attribute], mu[strategy]) for attribute in range(n_attributes)])
+                Lc[strategy] = prior * likelihood * pi[strategy]  # posterior
 
             # c_hat[examinee, :] = 10 ** 5 * Lc
             pp = Lc[1] / (Lc[0] + Lc[1])
             # print(WWW, examinee, pp, Lc, L, LL, p)
-            c[examinee] = np.random.binomial(1, pp)
+            c[examinee] = np.argmax(Lc)  # np.random.binomial(1, pp)
             c_hat[rep, WWW, examinee] = c[examinee]
+
+        # draw mu
+        num_attributes = np.sum(alpha, axis=1)
+        attr_sum = [np.sum(num_attributes[c == m]) for m in range(n_strategies)]
+
+        mu = [
+            np.random.beta(attr_sum[m] + lambda_1, alpha.size - attr_sum[m] + lambda_2)
+            for m in range(n_strategies)
+        ]
+        mu_hat[rep, WWW] = mu
 
         # draw alpha (latent skill vector)
         for examinee in range(n_examinees):
-            alpha_new = np.random.binomial(1, 0.5, n_attributes)
             strategy_membership = int(c[examinee])
+            # using n=1, this is a bernoulli draw
+            # alpha_new = np.random.binomial(n=1, p=mu[strategy_membership], size=n_attributes)
+            alpha_new = np.random.binomial(n=1, p=0.5, size=n_attributes)
 
             # Ratio of likelihoods for the new and prior alpha values
             LLa = binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership]) / \
@@ -157,16 +173,16 @@ for rep in range(repititions):
 
             LLLa = 1
             for item in range(n_items):
-                yitt = np.prod([alpha[examinee, attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
-                yita_new = np.prod([alpha_new[attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
+                eta = np.prod([alpha[examinee, attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
+                eta_new = np.prod([alpha_new[attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
 
-                temm = (s_c[item, strategy_membership] ** yitt) * (g[item, strategy_membership] ** (1 - yitt))
-                tem_new = (s_c[item, strategy_membership] ** yita_new) * (g[item, strategy_membership] ** (1 - yita_new))
+                tem = (s_c[item, strategy_membership] ** eta) * (g[item, strategy_membership] ** (1 - eta))
+                tem_new = (s_c[item, strategy_membership] ** eta_new) * (g[item, strategy_membership] ** (1 - eta_new))
 
                 if score[examinee, item] == 1:
-                    temp = tem_new / np.maximum(temm, TINY_CONST)
+                    temp = tem_new / np.maximum(tem, TINY_CONST)
                 else:
-                    temp = (1 - tem_new) / (1 - temm)
+                    temp = (1 - tem_new) / (1 - tem)
 
                 LLLa *= temp
 
@@ -189,7 +205,6 @@ for rep in range(repititions):
 
             likelihood = np.ones(n_strategies)
 
-
             # { PROD i=1 to N: [ p_ijm ^ u_ij * (1 - p_ijm) ^ (1 - u_ij) ] ^ c_j ] ^ I(c_i = m) } Beta(s_jm) x Beta(g_jm)
             for examinee in range(n_examinees):
                 strategy_membership = int(c[examinee])
@@ -205,7 +220,7 @@ for rep in range(repititions):
                     p = 1 - tem
                     p_new = 1 - tem_new
 
-                likelihood[strategy_membership] = likelihood[strategy_membership] * (p_new / p)
+                likelihood[strategy_membership] *= (p_new / p)
 
             for strategy in range(n_strategies):
                 if likelihood[strategy] >= np.random.rand():
@@ -214,45 +229,6 @@ for rep in range(repititions):
 
         slipping[rep, WWW] = s_c
         guessing[rep, WWW] = g
-
-        # draw pi
-        ss = np.sum(c)
-        rr1 = ss + 0.01
-        rr2 = n_examinees - ss + 0.01
-
-        dd1 = np.random.gamma(shape=rr1, scale=1.0)
-        dd2 = np.random.gamma(shape=rr2, scale=1.0)
-
-        pi1 = dd1 / (dd1 + dd2)
-        pi2 = dd2 / (dd1 + dd2)
-        pi = np.array([pi1, pi2])
-        pi_hat[rep, WWW] = pi
-
-        # draw mu
-        num_attributes = np.sum(alpha, axis=1)
-        attr_sum = [np.sum(num_attributes[c == m]) for m in range(n_strategies)]
-
-        aa = np.sum(alpha, axis=1)
-        rrt1 = 0
-        rrt2 = 0
-
-        for examinee in range(n_examinees):
-            wt = int(c[examinee])
-            if wt == 0:
-                rrt1 += aa[examinee]
-            else:
-                rrt2 += aa[examinee]
-
-        ddt1 = rrt1 + lambda_1
-        ddt2 = n_examinees * n_attributes + lambda_2 - rrt1
-        dd3 = rrt2 + lambda_1
-        dd4 = n_examinees * n_attributes + lambda_2 - rrt2
-        # [np.random.beta(attr_sum[m] + lambda_1, alpha.size - attr_sum[m] + lambda_2) for m in range(n_strategies)]
-
-        mu1 = np.random.beta(ddt1, ddt2)
-        mu2 = np.random.beta(dd3, dd4)
-        mu = np.array([mu1, mu2])
-        mu_hat[rep, WWW] = mu
 
         # If were are past the burn-in period, the sum alpha, s and g to get an average value of them
         if WWW >= EM - BI:
@@ -273,30 +249,39 @@ for rep in range(repititions):
 
     alpha_final = np.round(alpha_avg)
 
-    guessing_hat = np.mean(guessing[rep, BI:])
     slipping_hat = np.mean(slipping[rep, BI:])
+    guessing_hat = np.mean(guessing[rep, BI:])
     # np.mean(np.mean(guessing[0, BI:], axis=0), axis=0)
 
     # some plotting
+    plt.plot(np.arange(EM), np.mean(c_hat[rep], axis=1))
+    plt.suptitle(f'c ({rep})')
+    plt.show()
+
     slipping_trace = np.mean(1 - slipping[rep], axis=1)
     guessing_trace = np.mean(guessing[rep], axis=1)
     plt.plot(np.arange(EM), slipping_trace[:, 0], label='slipping strategy 1')
     plt.plot(np.arange(EM), slipping_trace[:, 1], label='slipping strategy 2')
     plt.plot(np.arange(EM), guessing_trace[:, 0], label='guessing strategy 1')
     plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 2')
+    plt.suptitle(f'slipping and guessing ({rep})')
     plt.legend()
     plt.show()
 
     plt.plot(pi_hat[rep, :, 0], label='strategy 1')
     plt.plot(pi_hat[rep, :, 1], label='strategy 2')
-    plt.suptitle('pi')
+    plt.suptitle(f'pi ({rep})')
     plt.legend()
     plt.show()
 
     plt.plot(mu_hat[rep, :, 0], label='strategy 1')
     plt.plot(mu_hat[rep, :, 1], label='strategy 2')
-    plt.suptitle('mu')
+    plt.suptitle(f'mu ({rep})')
     plt.legend()
+    plt.show()
+
+    plt.matshow(alpha)
+    plt.suptitle(f'alpha ({rep})')
     plt.show()
 
 #     eta = np.zeros((examn, itemn, M))

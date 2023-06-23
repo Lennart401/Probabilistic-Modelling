@@ -145,9 +145,9 @@ for rep in range(repititions):
                 Lc[strategy] = prior * likelihood * pi[strategy]  # posterior
 
             # c_hat[examinee, :] = 10 ** 5 * Lc
-            pp = Lc[1] / (Lc[0] + Lc[1])
+            # pp = Lc[1] / (Lc[0] + Lc[1])
             # print(WWW, examinee, pp, Lc, L, LL, p)
-            c[examinee] = np.argmax(Lc)  # np.random.binomial(1, pp)
+            c[examinee] = np.argmax(multinomial.rvs(1, Lc / np.sum(Lc)))  # np.random.binomial(1, pp)
             c_hat[rep, WWW, examinee] = c[examinee]
 
         # draw mu

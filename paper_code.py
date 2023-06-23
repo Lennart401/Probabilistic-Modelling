@@ -6,6 +6,8 @@ from scipy.stats import bernoulli, dirichlet, binom, beta, multinomial
 
 
 TINY_CONST = 1e-10
+SHOW_PLOTS = False
+SAVE_PLOTS = True
 
 
 # Simulation parameters
@@ -64,11 +66,11 @@ q = np.stack([strategy_a_q_matrix, strategy_b_q_matrix]).transpose(1, 2, 0)
 n_attributes = strategy_a_q_matrix.shape[1]  # K attributes
 n_strategies = len(np.unique(strategy_a_q_matrix))  # M strategies
 n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
-n_examinees = 50
+n_examinees = 500
 
-EM = 200  # ???
+EM = 10000  # ???
 BI = int(EM / 2)
-repititions = 1  # number of repitions
+repititions = 15  # number of repitions
 
 # i : Examinee
 # w : Strategy
@@ -120,8 +122,8 @@ for rep in range(repititions):
     for WWW in tqdm(range(EM)):
         # draw pi
         membership_counts = np.array([np.sum(c == m) for m in range(n_strategies)])
-        membership_counts = np.flip(membership_counts)
-        pi = dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
+        # membership_counts = np.flip(membership_counts)
+        pi = 1 - dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
         pi_hat[rep, WWW] = pi
 
         # draw c (strategy membership parameter)
@@ -256,7 +258,10 @@ for rep in range(repititions):
     # some plotting
     plt.plot(np.arange(EM), np.mean(c_hat[rep], axis=1))
     plt.suptitle(f'c ({rep})')
-    plt.show()
+    if SAVE_PLOTS:
+        plt.savefig(f'plots/c_{rep}.png')
+    if SHOW_PLOTS:
+        plt.show()
 
     slipping_trace = np.mean(1 - slipping[rep], axis=1)
     guessing_trace = np.mean(guessing[rep], axis=1)
@@ -266,23 +271,35 @@ for rep in range(repititions):
     plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 2')
     plt.suptitle(f'slipping and guessing ({rep})')
     plt.legend()
-    plt.show()
+    if SAVE_PLOTS:
+        plt.savefig(f'plots/sg_{rep}.png')
+    if SHOW_PLOTS:
+        plt.show()
 
     plt.plot(pi_hat[rep, :, 0], label='strategy 1')
     plt.plot(pi_hat[rep, :, 1], label='strategy 2')
     plt.suptitle(f'pi ({rep})')
     plt.legend()
-    plt.show()
+    if SAVE_PLOTS:
+        plt.savefig(f'plots/pi_{rep}.png')
+    if SHOW_PLOTS:
+        plt.show()
 
     plt.plot(mu_hat[rep, :, 0], label='strategy 1')
     plt.plot(mu_hat[rep, :, 1], label='strategy 2')
     plt.suptitle(f'mu ({rep})')
     plt.legend()
-    plt.show()
+    if SAVE_PLOTS:
+        plt.savefig(f'plots/mu_{rep}.png')
+    if SHOW_PLOTS:
+        plt.show()
 
     plt.matshow(alpha)
     plt.suptitle(f'alpha ({rep})')
-    plt.show()
+    if SAVE_PLOTS:
+        plt.savefig(f'plots/alpha_{rep}.png')
+    if SHOW_PLOTS:
+        plt.show()
 
 #     eta = np.zeros((examn, itemn, M))
 #     eta_temp = zeros((examn, itemn))

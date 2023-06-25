@@ -1,13 +1,32 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 from scipy.stats import bernoulli, dirichlet, binom, beta, multinomial
+from datetime import datetime
 
 
 TINY_CONST = 1e-10
 SHOW_PLOTS = False
 SAVE_PLOTS = True
+START_TIME = datetime.now().strftime("%Y%m%d-%H%M%S")
+PLOTS_PATH = f'plots/{START_TIME}'
+PLOT_SIZE = (22, 9)
+PLOT_DPI = 300
+SAVE_RESULTS = True
+RESULTS_PATH = f'results/{START_TIME}'
+
+
+if SAVE_PLOTS:
+    os.makedirs(PLOTS_PATH)
+
+if SAVE_RESULTS:
+    os.makedirs(RESULTS_PATH)
+
+
+plt.rcParams["figure.figsize"] = PLOT_SIZE
+plt.rcParams["figure.dpi"] = PLOT_DPI
 
 
 # Simulation parameters
@@ -70,7 +89,7 @@ n_examinees = 500
 
 EM = 10000  # ???
 BI = int(EM / 2)
-repititions = 15  # number of repitions
+repititions = 5  # number of repitions
 
 # i : Examinee
 # w : Strategy
@@ -127,9 +146,11 @@ for rep in range(repititions):
         pi_hat[rep, WWW] = pi
 
         # draw c (strategy membership parameter)
+        # TODO parallelize
         for examinee in range(n_examinees):
             # p(c_i = m | all other parameters)
             Lc = np.ones(n_strategies)
+            # TODO parallelize / vectorize
             for strategy in range(n_strategies):
                 likelihood = 1
                 for item in range(n_items):
@@ -163,6 +184,7 @@ for rep in range(repititions):
         mu_hat[rep, WWW] = mu
 
         # draw alpha (latent skill vector)
+        # TODO parallelize
         for examinee in range(n_examinees):
             strategy_membership = int(c[examinee])
             # using n=1, this is a bernoulli draw
@@ -174,6 +196,7 @@ for rep in range(repititions):
                   binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership])
 
             LLLa = 1
+            # TODO parallelize / vectorize
             for item in range(n_items):
                 eta = np.prod([alpha[examinee, attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
                 eta_new = np.prod([alpha_new[attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
@@ -208,6 +231,7 @@ for rep in range(repititions):
             likelihood = np.ones(n_strategies)
 
             # { PROD i=1 to N: [ p_ijm ^ u_ij * (1 - p_ijm) ^ (1 - u_ij) ] ^ c_j ] ^ I(c_i = m) } Beta(s_jm) x Beta(g_jm)
+            # TODO parallelize / vectorize
             for examinee in range(n_examinees):
                 strategy_membership = int(c[examinee])
                 eta = np.prod([alpha[examinee, attribute] ** q[item, attribute, strategy_membership] for attribute in range(n_attributes)])
@@ -235,6 +259,7 @@ for rep in range(repititions):
         # If were are past the burn-in period, the sum alpha, s and g to get an average value of them
         if WWW >= EM - BI:
             bi_counter += 1
+            # TODO parallelize / vectorize
             for examinee in range(n_examinees):
                 for attribute in range(n_attributes):
                     alpha_sum[examinee, attribute] += alpha[examinee, attribute]
@@ -258,8 +283,10 @@ for rep in range(repititions):
     # some plotting
     plt.plot(np.arange(EM), np.mean(c_hat[rep], axis=1))
     plt.suptitle(f'c ({rep})')
+    plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'plots/c_{rep}.png')
+        plt.savefig(f'{PLOTS_PATH}/{rep}_c.png')
+        plt.clf()
     if SHOW_PLOTS:
         plt.show()
 
@@ -271,8 +298,10 @@ for rep in range(repititions):
     plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 2')
     plt.suptitle(f'slipping and guessing ({rep})')
     plt.legend()
+    plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'plots/sg_{rep}.png')
+        plt.savefig(f'{PLOTS_PATH}/{rep}_s_g.png')
+        plt.clf()
     if SHOW_PLOTS:
         plt.show()
 
@@ -280,8 +309,10 @@ for rep in range(repititions):
     plt.plot(pi_hat[rep, :, 1], label='strategy 2')
     plt.suptitle(f'pi ({rep})')
     plt.legend()
+    plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'plots/pi_{rep}.png')
+        plt.savefig(f'{PLOTS_PATH}/{rep}_pi.png')
+        plt.clf()
     if SHOW_PLOTS:
         plt.show()
 
@@ -289,17 +320,23 @@ for rep in range(repititions):
     plt.plot(mu_hat[rep, :, 1], label='strategy 2')
     plt.suptitle(f'mu ({rep})')
     plt.legend()
+    plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'plots/mu_{rep}.png')
+        plt.savefig(f'{PLOTS_PATH}/{rep}_mu.png')
+        plt.clf()
     if SHOW_PLOTS:
         plt.show()
 
-    plt.matshow(alpha)
+    plt.matshow(alpha.T)
     plt.suptitle(f'alpha ({rep})')
     if SAVE_PLOTS:
-        plt.savefig(f'plots/alpha_{rep}.png')
+        plt.savefig(f'{PLOTS_PATH}/{rep}_alpha.png')
+        plt.clf()
     if SHOW_PLOTS:
         plt.show()
+
+    if SAVE_RESULTS:
+        np.savez(f'{RESULTS_PATH}/{rep}.npz', alpha=alpha, c=c, pi=pi, mu=mu, s_c=s_c, g=g)
 
 #     eta = np.zeros((examn, itemn, M))
 #     eta_temp = zeros((examn, itemn))

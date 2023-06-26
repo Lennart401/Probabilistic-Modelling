@@ -119,7 +119,7 @@ for i in range(n_examinees):
     for j in range(n_items):
         score[i, j] = np.round(np.sum([pi[m] * (1 - true_slipping) ** eta[i, j, m] * true_guessing ** eta[i, j, m] for m in range(n_strategies)]))
 
-score = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_items)))
+# score = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_items)))
 
 # track c, s, g
 c_hat = np.zeros((repititions, EM, n_examinees))
@@ -223,10 +223,10 @@ for rep in range(repititions):
 
         for item in range(n_items):
             for strategy in range(n_strategies):
-                # g_new[item, strategy] = np.random.uniform(0.1, 0.3)
-                # s_c_new[item, strategy] = np.random.uniform(0.7, 0.9)
-                g_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
-                s_c_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
+                g_new[item, strategy] = np.random.uniform(0.0, 0.2)
+                s_c_new[item, strategy] = np.random.uniform(0.6, 0.8)
+                # g_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
+                # s_c_new[item, strategy] = beta.rvs(1, 2) * 0.4 + 0.1
 
             likelihood = np.ones(n_strategies)
 
@@ -289,6 +289,7 @@ for rep in range(repititions):
         plt.clf()
     if SHOW_PLOTS:
         plt.show()
+    plt.close()
 
     slipping_trace = np.mean(1 - slipping[rep], axis=1)
     guessing_trace = np.mean(guessing[rep], axis=1)
@@ -304,6 +305,7 @@ for rep in range(repititions):
         plt.clf()
     if SHOW_PLOTS:
         plt.show()
+    plt.close()
 
     plt.plot(pi_hat[rep, :, 0], label='strategy 1')
     plt.plot(pi_hat[rep, :, 1], label='strategy 2')
@@ -315,6 +317,7 @@ for rep in range(repititions):
         plt.clf()
     if SHOW_PLOTS:
         plt.show()
+    plt.close()
 
     plt.plot(mu_hat[rep, :, 0], label='strategy 1')
     plt.plot(mu_hat[rep, :, 1], label='strategy 2')
@@ -326,6 +329,7 @@ for rep in range(repititions):
         plt.clf()
     if SHOW_PLOTS:
         plt.show()
+    plt.close()
 
     plt.matshow(alpha.T)
     plt.suptitle(f'alpha ({rep})')
@@ -334,6 +338,7 @@ for rep in range(repititions):
         plt.clf()
     if SHOW_PLOTS:
         plt.show()
+    plt.close()
 
     if SAVE_RESULTS:
         np.savez(f'{RESULTS_PATH}/{rep}.npz', alpha=alpha, c=c, pi=pi, mu=mu, s_c=s_c, g=g)

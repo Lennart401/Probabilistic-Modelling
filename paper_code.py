@@ -34,6 +34,9 @@ lambda_1 = lambda_2 = 0.5
 beta_1 = beta_2 = 0.01
 beta_all = np.array([beta_1, beta_2])
 
+true_slipping = 0.3
+true_guessing = 0.1
+
 strategy_a_q_matrix = np.array([
     [1, 1, 1, 1, 0],
     [1, 1, 1, 1, 0],
@@ -87,19 +90,9 @@ n_strategies = len(np.unique(strategy_a_q_matrix))  # M strategies
 n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
 n_examinees = 500
 
-EM = 10000  # ???
-BI = int(EM / 2)
-repititions = 5  # number of repitions
-
-# i : Examinee
-# w : Strategy
-# j : Item
-# k : Attribute
-
-# parameters
-true_slipping = 0.3
-true_guessing = 0.1
-
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# Simulation the examinees taking a test
+# --------------------------------------------------------------------------------------------------------------------------------------------------
 alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
 mu = np.array(beta.rvs(lambda_1, lambda_2, size=n_strategies))
 pi = dirichlet.rvs(beta_all, size=1).flatten()
@@ -117,9 +110,24 @@ for i in range(n_examinees):
 score = np.zeros(shape=(n_examinees, n_items))
 for i in range(n_examinees):
     for j in range(n_items):
-        score[i, j] = np.round(np.sum([pi[m] * (1 - true_slipping) ** eta[i, j, m] * true_guessing ** eta[i, j, m] for m in range(n_strategies)]))
+        score[i, j] = bernoulli.rvs(np.sum([pi[m] * (1 - s_c[j, m]) ** eta[i, j, m] * g[j, m] ** eta[i, j, m] for m in range(n_strategies)]))
 
 # score = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_items)))
+
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+# START WITH MCMC SAMPLING
+# --------------------------------------------------------------------------------------------------------------------------------------------------
+EM = 10000  # ???
+BI = int(EM / 2)
+repititions = 5  # number of repitions
+
+# Priors
+alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
+mu = np.array(beta.rvs(lambda_1, lambda_2, size=n_strategies))
+pi = dirichlet.rvs(beta_all, size=1).flatten()
+s_c = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
+g = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
+c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
 
 # track c, s, g
 c_hat = np.zeros((repititions, EM, n_examinees))
@@ -139,13 +147,13 @@ g_sum = np.zeros((n_items, n_strategies))
 for rep in range(repititions):
     print('\nRepition: ', rep)
     for WWW in tqdm(range(EM)):
-        # draw pi
+        # draw pi using Gibbs Sampler (always accept, draw from conditional posterior)
         membership_counts = np.array([np.sum(c == m) for m in range(n_strategies)])
         # membership_counts = np.flip(membership_counts)
         pi = 1 - dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
         pi_hat[rep, WWW] = pi
 
-        # draw c (strategy membership parameter)
+        # draw c (strategy membership parameter), using Gibbs Sampler (always accept, draw from conditional posterior)
         # TODO parallelize
         for examinee in range(n_examinees):
             # p(c_i = m | all other parameters)
@@ -173,7 +181,7 @@ for rep in range(repititions):
             c[examinee] = np.argmax(multinomial.rvs(1, Lc / np.sum(Lc)))  # np.random.binomial(1, pp)
             c_hat[rep, WWW, examinee] = c[examinee]
 
-        # draw mu
+        # draw mu (strategy membership parameter), using Gibbs Sampler (always accept, draw from conditional posterior)
         num_attributes = np.sum(alpha, axis=1)
         attr_sum = [np.sum(num_attributes[c == m]) for m in range(n_strategies)]
 
@@ -183,7 +191,7 @@ for rep in range(repititions):
         ]
         mu_hat[rep, WWW] = mu
 
-        # draw alpha (latent skill vector)
+        # draw alpha (latent skill vector), using Metropolis-Hastings (accept/reject)
         # TODO parallelize
         for examinee in range(n_examinees):
             strategy_membership = int(c[examinee])
@@ -217,7 +225,7 @@ for rep in range(repititions):
 
             alpha_hat[rep, WWW, examinee] = alpha[examinee]
 
-        # draw s and g
+        # draw s and g (item parameters), using Metropolis-Hastings (accept/reject)
         s_c_new = np.zeros((n_items, n_strategies))
         g_new = np.zeros((n_items, n_strategies))
 

@@ -91,43 +91,32 @@ n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
 n_examinees = 500
 
 # --------------------------------------------------------------------------------------------------------------------------------------------------
-# Simulation the examinees taking a test
+# SIMULATION THE EXAMINEES TAKING A TEST
 # --------------------------------------------------------------------------------------------------------------------------------------------------
-alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
+alpha_sim = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
 mu = np.array(beta.rvs(lambda_1, lambda_2, size=n_strategies))
 pi = dirichlet.rvs(beta_all, size=1).flatten()
 s_c = np.ones((n_items, n_strategies)) * (1 - true_slipping)
 g = np.ones((n_items, n_strategies)) * true_guessing
-c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
 
 # build score from item response function
 eta = np.zeros(shape=(n_examinees, n_items, n_strategies))
 for i in range(n_examinees):
     for j in range(n_items):
         for m in range(n_strategies):
-            eta[i, j, m] = np.sum([alpha[i, k] * q[j, k, m] for k in range(n_attributes)])
+            eta[i, j, m] = np.prod([alpha_sim[i, k] ** q[j, k, m] for k in range(n_attributes)])
 
 score = np.zeros(shape=(n_examinees, n_items))
 for i in range(n_examinees):
     for j in range(n_items):
         score[i, j] = bernoulli.rvs(np.sum([pi[m] * (1 - s_c[j, m]) ** eta[i, j, m] * g[j, m] ** eta[i, j, m] for m in range(n_strategies)]))
 
-# score = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_items)))
-
 # --------------------------------------------------------------------------------------------------------------------------------------------------
 # START WITH MCMC SAMPLING
 # --------------------------------------------------------------------------------------------------------------------------------------------------
-EM = 10000  # ???
+EM = 10000
 BI = int(EM / 2)
 repititions = 5  # number of repitions
-
-# Priors
-alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
-mu = np.array(beta.rvs(lambda_1, lambda_2, size=n_strategies))
-pi = dirichlet.rvs(beta_all, size=1).flatten()
-s_c = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
-g = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
-c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
 
 # track c, s, g
 c_hat = np.zeros((repititions, EM, n_examinees))
@@ -145,8 +134,21 @@ g_sum = np.zeros((n_items, n_strategies))
 
 
 for rep in range(repititions):
+    # Inital values
+    alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
+    mu = np.array(beta.rvs(lambda_1, lambda_2, size=n_strategies))
+    pi = dirichlet.rvs([1, 1], size=1).flatten()
+    s_c = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
+    g = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
+    c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
+
+    # Start the MCMC
     print('\nRepition: ', rep)
     for WWW in tqdm(range(EM)):
+        # ----------------------------------------------------------------------------
+        # GIBBS SAMPLING
+        # ----------------------------------------------------------------------------
+
         # draw pi using Gibbs Sampler (always accept, draw from conditional posterior)
         membership_counts = np.array([np.sum(c == m) for m in range(n_strategies)])
         # membership_counts = np.flip(membership_counts)
@@ -190,6 +192,10 @@ for rep in range(repititions):
             for m in range(n_strategies)
         ]
         mu_hat[rep, WWW] = mu
+
+        # ----------------------------------------------------------------------------
+        # METROPOLIS-HASTINGS SAMPLING
+        # ----------------------------------------------------------------------------
 
         # draw alpha (latent skill vector), using Metropolis-Hastings (accept/reject)
         # TODO parallelize
@@ -284,8 +290,6 @@ for rep in range(repititions):
 
     alpha_final = np.round(alpha_avg)
 
-    slipping_hat = np.mean(slipping[rep, BI:])
-    guessing_hat = np.mean(guessing[rep, BI:])
     # np.mean(np.mean(guessing[0, BI:], axis=0), axis=0)
 
     # some plotting
@@ -339,8 +343,13 @@ for rep in range(repititions):
         plt.show()
     plt.close()
 
-    plt.matshow(alpha.T)
-    plt.suptitle(f'alpha ({rep})')
+    fig, ax = plt.subplots(nrows=1, ncols=2)
+    alpha_sim_ax = ax[0].matshow(alpha_sim.T, cmap='Greys')
+    alpha_ax = ax[1].matshow(alpha.T, cmap='Greys')
+    fig.colorbar(alpha_sim_ax, location='bottom')
+    fig.colorbar(alpha_ax, location='bottom')
+    plt.suptitle(f'alpha_sim vs. alpha ({rep})')
+    plt.tight_layout()
     if SAVE_PLOTS:
         plt.savefig(f'{PLOTS_PATH}/{rep}_alpha.png')
         plt.clf()
@@ -351,21 +360,46 @@ for rep in range(repititions):
     if SAVE_RESULTS:
         np.savez(f'{RESULTS_PATH}/{rep}.npz', alpha=alpha, c=c, pi=pi, mu=mu, s_c=s_c, g=g)
 
-#     eta = np.zeros((examn, itemn, M))
-#     eta_temp = zeros((examn, itemn))
-#
-#     p_MMS = zeros((examn, itemn))
-#     p_MMS_temp = zeros((examn, itemn, M))
-#
-#     # mixture multiple strategy model
-#     for strategy in range(k_total):
-#         eta[:, :, strategy] = eta_temp[alpha, q[:, :, strategy]]
-#         p_MMS_temp[:, :, strategy] = ((np.ones(examn, 1) * slipping_hat[itemn * (strategy-1) + 1:itemn * strategy].T) ** eta[:, :, strategy]) \
-#             * ((np.ones(examn, 1) * guessing_hat[itemn * (strategy - 1) + 1:itemn * strategy].T ** eta[:, :, strategy]))
-#         p_MMS = p_MMS + pai[strategy] * (p_MMS_temp[:, :, strategy] ** score * (1 - p_MMS_temp[:, :, strategy]) ** (1 - score))
-#
-#     p_MMS_log[:, :, rep] = np.log(p_MMS)
-#     logLik_MMS[rep] = np.sum(np.sum(np.log(p_MMS)))
+    eta = np.zeros(shape=(n_examinees, n_items, n_strategies))
+    for i in range(n_examinees):
+        for j in range(n_items):
+            for m in range(n_strategies):
+                eta[i, j, m] = np.prod([alpha[i, k] ** q[j, k, m] for k in range(n_attributes)])
+
+    p_MMS = np.zeros((n_examinees, n_items))
+
+    slipping_mean = np.mean(slipping[rep, BI:], axis=0)
+    guessing_mean = np.mean(guessing[rep, BI:], axis=0)
+    pi_mean = np.mean(pi_hat[rep, BI:], axis=0)
+
+    # mixture multiple strategy model
+    for examinee in range(n_examinees):
+        for item in range(n_items):
+            p_ijm = np.zeros(n_strategies)
+            for strategy in range(n_strategies):
+                tem = (slipping_mean[item, strategy] ** eta[examinee, item, strategy]) \
+                    * (guessing_mean[item, strategy] ** (1 - eta[examinee, item, strategy]))
+                p_ijm[strategy] = tem
+            p_MMS[examinee, item] = np.sum(pi_mean * (p_ijm ** score[examinee, item]) * ((1 - p_ijm) ** (1 - score[examinee, item])))
+            # p_MMS[examinee, item] = np.sum(p_ijm)
+
+    fig, ax = plt.subplots(nrows=1, ncols=2)
+    score_ax = ax[0].matshow(score.T, cmap='Greys')
+    p_MMS_ax = ax[1].matshow(p_MMS.T, cmap='Greys')
+    fig.colorbar(score_ax, location='bottom')
+    fig.colorbar(p_MMS_ax, location='bottom')
+    plt.suptitle(f'score vs. p_MMS ({rep})')
+    plt.tight_layout()
+    if SAVE_PLOTS:
+        plt.savefig(f'{PLOTS_PATH}/{rep}_p_MMS.png')
+        plt.clf()
+    if SHOW_PLOTS:
+        plt.show()
+    plt.close()
+
+    # p_MMS_log[:, :, rep] = np.log(p_MMS)
+    # logLik_MMS[rep] = np.sum(np.sum(np.log(p_MMS)))
+
 #
 #     # DINA model
 #     p_DINA_1 = p_MMS_temp[:, :, 0]

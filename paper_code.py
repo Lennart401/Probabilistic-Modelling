@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
-from scipy.stats import bernoulli, dirichlet, beta, multinomial
+from scipy.stats import bernoulli, binom, dirichlet, beta, multinomial, norm
 from datetime import datetime
 
 
@@ -29,8 +29,8 @@ if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     SAVE_PLOTS = False
     SAVE_RESULTS = False
     PLOT_DPI = 100
-    N_EXAMINEES = 10
-    N_ITERATIONS = 100
+    N_EXAMINEES = 100
+    N_ITERATIONS = 1000
     N_REPEATS = 1
 
 
@@ -50,10 +50,14 @@ plt.rcParams["figure.dpi"] = PLOT_DPI
 # Simulation parameters
 lambda_1 = lambda_2 = 0.5
 beta_all = np.array([1, 1])
-beta_sim = np.array([5, 5])
+beta_sim = np.array([1, 1])
 
 true_slipping = 0.3
 true_guessing = 0.1
+
+xi_0 = np.array([-0.95, -1.42, -0.66, 0.5, -0.05])
+xi_1 = np.array([1.34, 1.22, 1.08, 1.11, 0.97])
+theta_weight = 0.9
 
 strategy_a_q_matrix = np.array([
     [1, 1, 1, 1, 0],
@@ -160,6 +164,7 @@ for rep in range(repititions):
     s_c = 1 - np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
     g = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
     c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
+    theta = np.array(norm.rvs(0, 1, size=n_examinees))
 
     # Start the MCMC
     print('\nRepition: ', rep)
@@ -208,6 +213,7 @@ for rep in range(repititions):
 
         mu = [
             np.random.beta(attr_sum[m] + lambda_1, alpha[c == m].size - attr_sum[m] + lambda_2)
+            # np.random.beta(attr_sum[m] + lambda_1, alpha.size - attr_sum[m] + lambda_2)
             for m in range(n_strategies)
         ]
         mu_hat[rep, WWW] = mu
@@ -215,6 +221,23 @@ for rep in range(repititions):
         # -------------------------------------------------------------------------------------------------------------
         # METROPOLIS-HASTINGS SAMPLING
         # -------------------------------------------------------------------------------------------------------------
+
+        # draw theta
+        # TODO parallelize
+        for examinee in range(n_examinees):
+            theta_new = norm.rvs(theta[examinee], 1)
+
+            # Ratio of likelihoods for the new and prior theta values
+            tem = np.add(xi_0, xi_1 * theta[examinee])
+            p_alpha_theta = np.exp(tem) / (1 + np.exp(tem))
+
+            tem_new = np.add(xi_0, xi_1 * theta_new)
+            p_alpha_theta_new = np.exp(tem_new) / (1 + np.exp(tem_new))
+
+            likelihood = np.prod(p_alpha_theta_new) / np.prod(p_alpha_theta)
+
+            if likelihood >= np.random.rand():
+                theta[examinee] = theta_new
 
         # draw alpha (latent skill vector), using Metropolis-Hastings (accept/reject)
         # TODO parallelize
@@ -224,9 +247,10 @@ for rep in range(repititions):
             # alpha_new = np.random.binomial(n=1, p=mu[strategy_membership], size=n_attributes)
             alpha_new = np.random.binomial(n=1, p=0.5, size=n_attributes)
 
+            probability = theta_weight * mu[strategy_membership] + (1 - theta_weight) * theta[examinee]
             # Ratio of likelihoods for the new and prior alpha values
-            LLa = binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership]) / \
-                  binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership])
+            LLa = binom.pmf(np.sum(alpha_new), n_attributes, probability) / \
+                  binom.pmf(np.sum(alpha[examinee, :]), n_attributes, probability)
             # LLa = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) / \
             #       binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership])
 

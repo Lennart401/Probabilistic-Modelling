@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
-from scipy.stats import bernoulli, dirichlet, beta, multinomial
+from scipy.stats import bernoulli, dirichlet, binom, beta, multinomial
 from datetime import datetime
 
 

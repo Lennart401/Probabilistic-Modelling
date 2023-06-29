@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from tqdm import tqdm
-from scipy.stats import bernoulli, dirichlet, binom, beta, multinomial
+from scipy.stats import bernoulli, dirichlet, beta, multinomial
 from datetime import datetime
 
 
@@ -19,7 +19,7 @@ RESULTS_PATH = f'results/{START_TIME}'
 
 # Script length variables
 N_EXAMINEES = 500
-N_ITERATIONS = 10000
+N_ITERATIONS = 3000
 N_REPEATS = 3
 
 
@@ -49,9 +49,8 @@ plt.rcParams["figure.dpi"] = PLOT_DPI
 
 # Simulation parameters
 lambda_1 = lambda_2 = 0.5
-beta_1 = beta_2 = 0.01
 beta_all = np.array([1, 1])
-beta_sim = np.array([1, 1])
+beta_sim = np.array([5, 5])
 
 true_slipping = 0.3
 true_guessing = 0.1
@@ -172,7 +171,7 @@ for rep in range(repititions):
         # draw pi using Gibbs Sampler (always accept, draw from conditional posterior)
         membership_counts = np.array([np.sum(c == m) for m in range(n_strategies)])
         # membership_counts = np.flip(membership_counts)
-        pi = 1 - dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
+        pi = dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
         pi_hat[rep, WWW] = pi
 
         # draw c (strategy membership parameter), using Gibbs Sampler (always accept, draw from conditional posterior)
@@ -208,7 +207,7 @@ for rep in range(repititions):
         attr_sum = [np.sum(num_attributes[c == m]) for m in range(n_strategies)]
 
         mu = [
-            np.random.beta(attr_sum[m] + lambda_1, alpha.size - attr_sum[m] + lambda_2)
+            np.random.beta(attr_sum[m] + lambda_1, alpha[c == m].size - attr_sum[m] + lambda_2)
             for m in range(n_strategies)
         ]
         mu_hat[rep, WWW] = mu
@@ -400,13 +399,18 @@ for rep in range(repititions):
 
     # plotting matrices
     cmap = 'plasma'
+    colorbar_location = 'right'
 
-    # alpha (simulated and sampled) - latent skill vector
-    fig, ax = plt.subplots(nrows=2, ncols=1)
-    alpha_sim_ax = ax[0].matshow(alpha_sim.T, aspect='auto', cmap=cmap)
-    alpha_ax = ax[1].matshow(alpha.T, aspect='auto', cmap=cmap)
-    fig.colorbar(alpha_sim_ax, location='bottom')
-    fig.colorbar(alpha_ax, location='bottom')
+    # alpha (difference, simulated and sampled) - latent skill vector
+    alpha_diff = np.abs(alpha_sim - alpha)
+
+    fig, ax = plt.subplots(nrows=3, ncols=1)
+    alpha_diff_ax = ax[0].matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')
+    alpha_sim_ax = ax[1].matshow(alpha_sim.T, aspect='auto', cmap=cmap)
+    alpha_ax = ax[2].matshow(alpha.T, aspect='auto', cmap=cmap)
+    fig.colorbar(alpha_diff_ax, location=colorbar_location)
+    fig.colorbar(alpha_sim_ax, location=colorbar_location)
+    fig.colorbar(alpha_ax, location=colorbar_location)
     plt.suptitle(f'alpha_sim vs. alpha ({rep})')
     plt.tight_layout()
     if SAVE_PLOTS:
@@ -421,9 +425,9 @@ for rep in range(repititions):
     score_ax = ax[0].matshow(score.T, aspect='auto', cmap=cmap)
     score_pred_ax = ax[1].matshow(score_pred.T, aspect='auto', cmap=cmap)
     p_MMS_ax = ax[2].matshow(p_MMS.T, aspect='auto', cmap=cmap)
-    fig.colorbar(score_ax, location='bottom')
-    fig.colorbar(score_pred_ax, location='bottom')
-    fig.colorbar(p_MMS_ax, location='bottom')
+    fig.colorbar(score_ax, location=colorbar_location)
+    fig.colorbar(score_pred_ax, location=colorbar_location)
+    fig.colorbar(p_MMS_ax, location=colorbar_location)
     plt.suptitle(f'score vs. p_MMS ({rep})')
     plt.tight_layout()
     if SAVE_PLOTS:

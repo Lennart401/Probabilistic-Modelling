@@ -1,9 +1,10 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from tqdm import tqdm
-from scipy.stats import bernoulli, binom, dirichlet, beta, multinomial, norm
+from scipy.stats import bernoulli, binom, dirichlet, beta, multinomial, norm, lognorm, uniform
 from datetime import datetime
 
 TINY_CONST = 1e-10
@@ -15,7 +16,9 @@ PLOT_SIZE = (22, 9)
 PLOT_DPI = 600
 SAVE_RESULTS = True
 RESULTS_PATH = f'results/{START_TIME}'
-USE_EXTENSION = True
+USE_EXTENSION_LAMBDA = False
+USE_EXTENSION_THETA = False
+USE_REAL_DATA = True
 
 # Script length variables
 N_EXAMINEES = 500
@@ -28,8 +31,8 @@ if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     SAVE_PLOTS = False
     SAVE_RESULTS = False
     PLOT_DPI = 100
-    N_EXAMINEES = 100
-    N_ITERATIONS = 10
+    N_EXAMINEES = 250
+    N_ITERATIONS = 100
     N_REPEATS = 1
 
 if SAVE_PLOTS:
@@ -99,11 +102,19 @@ strategy_b_q_matrix = np.array([
     [1, 0, 0, 1, 0]
 ])
 
-q = np.stack([strategy_a_q_matrix, strategy_b_q_matrix]).transpose(1, 2, 0)
+if USE_REAL_DATA:
+    # load the q matrix from fs_qmatrix.csv
+    q_raw = pd.read_csv('fs_qmatrix.csv', header=0, index_col=[0, 1])
+    q_a = q_raw.iloc[:, :7].values
+    q_b = q_raw.iloc[:, 7:].values
+    q = np.stack([q_a, q_b]).transpose([1, 2, 0])
 
-n_attributes = strategy_a_q_matrix.shape[1]  # K attributes
-n_strategies = len(np.unique(strategy_a_q_matrix))  # M strategies
-n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
+else:
+    q = np.stack([strategy_a_q_matrix, strategy_b_q_matrix]).transpose([1, 2, 0])
+
+n_attributes = q.shape[1]  # K attributes
+n_strategies = q.shape[2]  # M strategies
+n_items = q.shape[0]  # J items, j-th item
 n_examinees = N_EXAMINEES
 
 slipping_trace_avg = np.ones([N_REPEATS, n_strategies])
@@ -113,26 +124,31 @@ pi_avg = np.ones(N_REPEATS)
 # ---------------------------------------------------------------------------------------------------------------------
 # SIMULATION THE EXAMINEES TAKING A TEST
 # ---------------------------------------------------------------------------------------------------------------------
-alpha_sim = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
-pi = 1 - dirichlet.rvs(pi_hyperparams_simulation, size=1).flatten()
-pi_true = pi
-s_c = np.ones((n_items, n_strategies)) * (1 - true_slipping)
-g = np.ones((n_items, n_strategies)) * true_guessing
+if not USE_REAL_DATA:
+    alpha_sim = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
+    pi = 1 - dirichlet.rvs(pi_hyperparams_simulation, size=1).flatten()
+    pi_true = pi
+    s_c = np.ones((n_items, n_strategies)) * (1 - true_slipping)
+    g = np.ones((n_items, n_strategies)) * true_guessing
 
-print('pi for simulation:', pi)
+    print('pi for simulation:', pi)
 
-# build score from item response function
-eta = np.zeros(shape=(n_examinees, n_items, n_strategies))
-for i in range(n_examinees):
-    for j in range(n_items):
-        for m in range(n_strategies):
-            eta[i, j, m] = np.prod([alpha_sim[i, k] ** q[j, k, m] for k in range(n_attributes)])
+    # build score from item response function
+    eta = np.zeros(shape=(n_examinees, n_items, n_strategies))
+    for i in range(n_examinees):
+        for j in range(n_items):
+            for m in range(n_strategies):
+                eta[i, j, m] = np.prod([alpha_sim[i, k] ** q[j, k, m] for k in range(n_attributes)])
 
-score = np.zeros(shape=(n_examinees, n_items))
-for i in range(n_examinees):
-    for j in range(n_items):
-        score[i, j] = bernoulli.rvs(
-            np.sum([pi[m] * s_c[j, m] ** eta[i, j, m] * g[j, m] ** (1 - eta[i, j, m]) for m in range(n_strategies)]))
+    score = np.zeros(shape=(n_examinees, n_items))
+    for i in range(n_examinees):
+        for j in range(n_items):
+            score[i, j] = bernoulli.rvs(
+                np.sum([pi[m] * s_c[j, m] ** eta[i, j, m] * g[j, m] ** (1 - eta[i, j, m]) for m in range(n_strategies)]))
+
+if USE_REAL_DATA:
+    score = pd.read_csv('fs_score.csv', header=0, index_col=0).values
+    n_examinees = score.shape[0]
 
 # ---------------------------------------------------------------------------------------------------------------------
 # START WITH MCMC SAMPLING
@@ -149,6 +165,8 @@ slipping = np.zeros((repetitions, EM, n_items, n_strategies))
 guessing = np.zeros((repetitions, EM, n_items, n_strategies))
 alpha_hat = np.zeros((repetitions, EM, n_examinees, n_attributes))
 theta_hat = np.zeros((repetitions, EM, n_examinees))
+lambda_0_hat = np.zeros((repetitions, EM, n_attributes))
+lambda_1_hat = np.zeros((repetitions, EM, n_attributes))
 
 # after burn-in variables
 bi_counter = 0
@@ -168,8 +186,12 @@ for rep in range(repetitions):
     g = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
     c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
     theta = np.array(beta.rvs(2, 2, size=n_examinees))
-    lambda_0 = np.array([-0.95, -1.42, -0.66, 0.5, -0.05])
-    lambda_1 = np.array([1.34, 1.22, 1.08, 1.11, 0.97])
+    if USE_EXTENSION_LAMBDA:
+        lambda_0 = np.array(norm.rvs(loc=0, scale=1, size=n_attributes))
+        lambda_1 = np.array(lognorm.rvs(1, loc=1, scale=1, size=n_attributes))
+    else:
+        lambda_0 = np.array([-0.95, -1.42, -0.66, 0.5, -0.05])
+        lambda_1 = np.array([1.34, 1.22, 1.08, 1.11, 0.97])
 
     # Start the MCMC
     print('\nRepition: ', rep)
@@ -181,7 +203,7 @@ for rep in range(repetitions):
         # draw pi using Gibbs Sampler (always accept, draw from conditional posterior)
         membership_counts = np.array([np.sum(c == m) for m in range(n_strategies)])
         # membership_counts = np.flip(membership_counts)
-        pi = 1 - dirichlet.rvs(pi_hyperparams + membership_counts, size=1).flatten()
+        pi = dirichlet.rvs(pi_hyperparams + membership_counts, size=1).flatten()
         pi_hat[rep, WWW] = pi
 
         # draw c (strategy membership parameter), using Gibbs Sampler (always accept, draw from conditional posterior)
@@ -229,17 +251,43 @@ for rep in range(repetitions):
         # METROPOLIS-HASTINGS SAMPLING
         # -------------------------------------------------------------------------------------------------------------
 
+        # draw lambda
+        if USE_EXTENSION_LAMBDA:
+            for attribute in range(n_attributes):
+                # range [ loc, loc + scale ]
+                lower = lambda_0[attribute] - 1
+                upper = lambda_0[attribute] + 1
+                lambda_0_new = uniform.rvs(loc=lower, scale=upper - lower)
+
+                lower = lambda_1[attribute] - 1
+                upper = lambda_1[attribute] + 1
+                lambda_1_new = uniform.rvs(loc=lower, scale=upper - lower)
+
+                # Ratio of likelihoods for the new and prior lambda values
+                tem = np.add(lambda_0[attribute], lambda_1[attribute] * np.prod(theta))
+                p_alpha_lambda = np.exp(tem) / (1 + np.exp(tem))
+
+                tem_new = np.add(lambda_0_new, lambda_1_new * np.prod(theta))
+                p_alpha_lambda_new = np.exp(tem_new) / (1 + np.exp(tem_new))
+
+                likelihood_0 = (np.prod(p_alpha_lambda_new) * norm.pdf(lambda_0_new, loc=0, scale=1)) / \
+                               (np.prod(p_alpha_lambda) * norm.pdf(lambda_0[attribute], loc=0, scale=1))
+                if likelihood_0 >= np.random.rand():
+                    lambda_0[attribute] = lambda_0_new
+
+                likelihood_1 = (np.prod(p_alpha_lambda_new) * lognorm.pdf(x=lambda_1_new, s=1, loc=0, scale=1)) / \
+                               (np.prod(p_alpha_lambda) * lognorm.pdf(x=lambda_1[attribute], s=1, loc=0, scale=1))
+                if likelihood_1 >= np.random.rand():
+                    lambda_1[attribute] = lambda_1_new
+
+            lambda_0_hat[rep, WWW] = lambda_0
+            lambda_1_hat[rep, WWW] = lambda_1
+
         # draw theta
-        # TODO parallelize
-        if USE_EXTENSION:
+        if USE_EXTENSION_THETA:
+            # TODO parallelize
             for examinee in range(n_examinees):
-                alpha_param = 2
-                beta_param = 2
-                if theta[examinee] >= 0.5:
-                    alpha_param += theta[examinee]
-                else:
-                    beta_param += theta[examinee]
-                theta_new = beta.rvs(alpha_param, beta_param)
+                theta_new = norm.rvs(loc=theta[examinee], scale=1)
 
                 # Ratio of likelihoods for the new and prior theta values
                 tem = np.add(lambda_0, lambda_1 * theta[examinee])
@@ -247,11 +295,12 @@ for rep in range(repetitions):
 
                 tem_new = np.add(lambda_0, lambda_1 * theta_new)
                 p_alpha_theta_new = np.exp(tem_new) / (1 + np.exp(tem_new))
-                likelihood = (np.prod(p_alpha_theta_new) * beta.pdf(theta_new, alpha_param, beta_param)) / (
-                            np.prod(p_alpha_theta) * beta.pdf(theta[examinee], alpha_param, beta_param))
+
+                likelihood = (np.prod(p_alpha_theta_new) * norm.pdf(theta_new, loc=0, scale=1)) / \
+                             (np.prod(p_alpha_theta) * norm.pdf(theta[examinee], loc=0, scale=1))
 
                 if likelihood >= np.random.rand():
-                    theta[examinee] = theta_new
+                    theta[examinee] = 1 / (1 + np.exp(-theta_new))
 
                 theta_hat[rep, WWW, examinee] = theta[examinee]
 
@@ -263,10 +312,11 @@ for rep in range(repetitions):
             # alpha_new = np.random.binomial(n=1, p=mu[strategy_membership], size=n_attributes)
             alpha_new = np.random.binomial(n=1, p=0.5, size=n_attributes)
 
-            if USE_EXTENSION:
+            if USE_EXTENSION_THETA:
                 probability = theta_weight * mu[strategy_membership] + (1 - theta_weight) * theta[examinee]
             else:
                 probability = mu[strategy_membership]
+
             # Ratio of likelihoods for the new and prior alpha values
             LLa = binom.pmf(np.sum(alpha_new), n_attributes, probability) / \
                   binom.pmf(np.sum(alpha[examinee, :]), n_attributes, probability)
@@ -339,7 +389,7 @@ for rep in range(repetitions):
         slipping[rep, WWW] = s_c
         guessing[rep, WWW] = g
 
-        # If were are past the burn-in period, the sum alpha, s and g to get an average value of them
+        # If we are past the burn-in period, the sum alpha, s and g to get an average value of them
         if WWW >= EM - BI:
             bi_counter += 1
             # TODO parallelize / vectorize
@@ -412,7 +462,7 @@ for rep in range(repetitions):
     plt.plot(np.arange(EM), slipping_trace[:, 1], label='slipping strategy 2')
     plt.plot(np.arange(EM), guessing_trace[:, 0], label='guessing strategy 1')
     plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 2')
-    plt.ylim([0, 1])
+    plt.ylim([0, 0.5])
     plt.suptitle(f'slipping and guessing ({rep})')
     plt.legend()
     plt.tight_layout()
@@ -452,7 +502,7 @@ for rep in range(repetitions):
     plt.close()
 
     # theta - general knowledge
-    if USE_EXTENSION:
+    if USE_EXTENSION_THETA:
         plt.plot(np.arange(EM), np.mean(theta_hat[rep], axis=1))
         plt.ylim([0, 1])
         plt.suptitle(f'theta ({rep})')
@@ -464,32 +514,61 @@ for rep in range(repetitions):
         plt.clf()
         plt.close()
 
+    # lambda - attribute weight
+    if USE_EXTENSION_THETA:
+        for attribute in range(n_attributes):
+            plt.plot(np.arange(EM), lambda_0_hat[rep, :, attribute], c='r', label=f'Lambda 0 [{attribute}]')
+            plt.plot(np.arange(EM), lambda_1_hat[rep, :, attribute], c='b', label=f'Lambda 1 [{attribute}]')
+        plt.suptitle(f'lambda ({rep})')
+        plt.tight_layout()
+        plt.legend()
+        if SAVE_PLOTS:
+            plt.savefig(f'{PLOTS_PATH}/{rep}_lambda.png')
+        if SHOW_PLOTS:
+            plt.show()
+        plt.clf()
+        plt.close()
+
     # plotting matrices
     cmap = 'plasma'
     colorbar_location = 'right'
 
-    # alpha (difference, simulated and sampled) - latent skill vector
-    alpha_diff = np.abs(alpha_sim - alpha_final)
-    print(f'weight for mu {theta_weight}: {np.sum(alpha_diff) / (n_attributes * n_examinees)}')
+    # alpha - latent skill vector
+    if USE_REAL_DATA:
+        plt.matshow(alpha_final.T, aspect='auto', cmap=cmap)
+        plt.suptitle('alpha')
+        plt.colorbar(location=colorbar_location)
+        plt.tight_layout()
+        if SAVE_PLOTS:
+            plt.savefig(f'{PLOTS_PATH}/{rep}_alpha.png')
+        if SHOW_PLOTS:
+            plt.show()
+        plt.clf()
+        plt.close()
 
-    fig, ax = plt.subplots(nrows=3, ncols=1)
-    alpha_diff_ax = ax[0].matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')
-    ax[0].set_title('alpha_sim - alpha_final')
-    alpha_sim_ax = ax[1].matshow(alpha_sim.T, aspect='auto', cmap=cmap)
-    ax[1].set_title('alpha_sim')
-    alpha_ax = ax[2].matshow(alpha_final.T, aspect='auto', cmap=cmap)
-    ax[2].set_title('alpha_final')
-    fig.colorbar(alpha_diff_ax, location=colorbar_location)
-    fig.colorbar(alpha_sim_ax, location=colorbar_location)
-    fig.colorbar(alpha_ax, location=colorbar_location)
-    plt.suptitle(f'alpha_sim vs. alpha ({rep})')
-    plt.tight_layout()
-    if SAVE_PLOTS:
-        plt.savefig(f'{PLOTS_PATH}/{rep}_alpha.png')
-    if SHOW_PLOTS:
-        plt.show()
-    plt.clf()
-    plt.close()
+    # alpha (difference, simulated and sampled) - latent skill vector
+    else:
+        alpha_diff = np.abs(alpha_sim - alpha_final)
+        print(f'weight for mu {theta_weight}: {np.sum(alpha_diff) / (n_attributes * n_examinees)}')
+
+        fig, ax = plt.subplots(nrows=3, ncols=1)
+        alpha_diff_ax = ax[0].matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')
+        ax[0].set_title('alpha_sim - alpha_final')
+        alpha_sim_ax = ax[1].matshow(alpha_sim.T, aspect='auto', cmap=cmap)
+        ax[1].set_title('alpha_sim')
+        alpha_ax = ax[2].matshow(alpha_final.T, aspect='auto', cmap=cmap)
+        ax[2].set_title('alpha_final')
+        fig.colorbar(alpha_diff_ax, location=colorbar_location)
+        fig.colorbar(alpha_sim_ax, location=colorbar_location)
+        fig.colorbar(alpha_ax, location=colorbar_location)
+        plt.suptitle(f'alpha_sim vs. alpha ({rep})')
+        plt.tight_layout()
+        if SAVE_PLOTS:
+            plt.savefig(f'{PLOTS_PATH}/{rep}_alpha.png')
+        if SHOW_PLOTS:
+            plt.show()
+        plt.clf()
+        plt.close()
 
     # score and predicted probability
     fig, ax = plt.subplots(nrows=3, ncols=1)
@@ -525,18 +604,26 @@ for rep in range(repetitions):
 # -----------------------------------------------------------------------------------------------------------------
 # Error Measures
 # -----------------------------------------------------------------------------------------------------------------
+
 # Bias
 Bias_slipping_1 = 1 / N_REPEATS * np.sum([slipping_trace_avg[rep, 0] - true_slipping for rep in range(N_REPEATS)])
 Bias_guessing_1 = 1 / N_REPEATS * np.sum([guessing_trace_avg[rep, 0] - true_guessing for rep in range(N_REPEATS)])
 Bias_slipping_2 = 1 / N_REPEATS * np.sum([slipping_trace_avg[rep, 1] - true_slipping for rep in range(N_REPEATS)])
 Bias_guessing_2 = 1 / N_REPEATS * np.sum([guessing_trace_avg[rep, 1] - true_guessing for rep in range(N_REPEATS)])
-Bias_pi = 1 / N_REPEATS * np.sum([pi_avg[rep] - (1 - pi_true[0]) for rep in range(N_REPEATS)])
+if not USE_REAL_DATA:
+    Bias_pi = 1 / N_REPEATS * np.sum([pi_avg[rep] - (1 - pi_true[0]) for rep in range(N_REPEATS)])
+else:
+    Bias_pi = None
 # MSE
 MSE_slipping_1 = 1 / N_REPEATS * np.sum([(slipping_trace_avg[rep, 0] - true_slipping) ** 2 for rep in range(N_REPEATS)])
 MSE_guessing_1 = 1 / N_REPEATS * np.sum([(guessing_trace_avg[rep, 0] - true_guessing) ** 2 for rep in range(N_REPEATS)])
 MSE_slipping_2 = 1 / N_REPEATS * np.sum([(slipping_trace_avg[rep, 1] - true_slipping) ** 2 for rep in range(N_REPEATS)])
 MSE_guessing_2 = 1 / N_REPEATS * np.sum([(guessing_trace_avg[rep, 1] - true_guessing) ** 2 for rep in range(N_REPEATS)])
-MSE_pi = 1 / N_REPEATS * np.sum([(pi_avg[rep] - (1 - pi_true[0])) ** 2 for rep in range(N_REPEATS)])
+if not USE_REAL_DATA:
+    MSE_pi = 1 / N_REPEATS * np.sum([(pi_avg[rep] - (1 - pi_true[0])) ** 2 for rep in range(N_REPEATS)])
+else:
+    MSE_pi = None
+
 # SD
 SD_slipping = 1 / N_REPEATS * np.sum([np.std(slipping[rep, BI:]) for rep in range(N_REPEATS)])
 SD_guessing = 1 / N_REPEATS * np.sum([np.std(guessing[rep, BI:]) for rep in range(N_REPEATS)])
@@ -546,50 +633,51 @@ print(f'Bias slipping 1: {Bias_slipping_1} & Bias slipping 2: {Bias_slipping_2};
 print(f'MSE slipping 1: {MSE_slipping_1} & MSE slipping 2: {MSE_slipping_2}; MSE guessing 1: {MSE_guessing_1} & MSE guessing 2: {MSE_guessing_2}; MSE pi: {MSE_pi}')
 print(f'SD slipping: {SD_slipping}; SD guessing: {SD_guessing}; SD pi: {SD_pi}')
 
-# Attribute Recovery Error Measure
-print('Error for all attributes:', np.sum(alpha_diff) / alpha_diff.size)
+if not USE_REAL_DATA:
+    # Attribute Recovery Error Measure
+    print('Error for all attributes:', np.sum(alpha_diff) / alpha_diff.size)
 
-# Marginal correct classification rate (for each attribute)
-for i, row in enumerate(alpha_diff.T):
-    error = (np.sum(row) / n_examinees)
-    print(f'error for attribute {i}: {error}')
+    # Marginal correct classification rate (for each attribute)
+    for i, row in enumerate(alpha_diff.T):
+        error = (np.sum(row) / n_examinees)
+        print(f'error for attribute {i}: {error}')
 
-# proportion of examinees classified correctly for all K attributes
-counter = 0
-for column in alpha_diff:
-    if np.all(column == 0):
-        counter += 1
+    # proportion of examinees classified correctly for all K attributes
+    counter = 0
+    for column in alpha_diff:
+        if np.all(column == 0):
+            counter += 1
 
-classification_rate = counter / N_EXAMINEES
-print(f'proportion of examinees classified correctly for all K attributes: {classification_rate}')
+    classification_rate = counter / n_examinees
+    print(f'proportion of examinees classified correctly for all K attributes: {classification_rate}')
 
-# proportion of examinees classified correctly for at least K-1 attributes
-counter = 0
-for i, row in enumerate(alpha_diff):
-    counter_rows = 0
-    for j, attribute in enumerate(row):
-        if alpha_diff[i, j] == 0:
-            counter_rows += 1
+    # proportion of examinees classified correctly for at least K-1 attributes
+    counter = 0
+    for i, row in enumerate(alpha_diff):
+        counter_rows = 0
+        for j, attribute in enumerate(row):
+            if alpha_diff[i, j] == 0:
+                counter_rows += 1
 
-    if counter_rows >= n_attributes - 1:
-        counter += 1
+        if counter_rows >= n_attributes - 1:
+            counter += 1
 
-classification_rate = counter / N_EXAMINEES
-print(f'proportion of examinees classified correctly for at least K-1 attributes: {classification_rate}')
+    classification_rate = counter / n_examinees
+    print(f'proportion of examinees classified correctly for at least K-1 attributes: {classification_rate}')
 
-# proportion of examinees classified incorrectly for K-1 or K attributes
-counter = 0
-for i, row in enumerate(alpha_diff):
-    counter_rows = 0
-    for j, column in enumerate(alpha_diff.T):
-        if alpha_diff[i, j] == 1:
-            counter_rows += 1
+    # proportion of examinees classified incorrectly for K-1 or K attributes
+    counter = 0
+    for i, row in enumerate(alpha_diff):
+        counter_rows = 0
+        for j, column in enumerate(alpha_diff.T):
+            if alpha_diff[i, j] == 1:
+                counter_rows += 1
 
-    if counter_rows >= n_attributes - 1:
-        counter += 1
+        if counter_rows >= n_attributes - 1:
+            counter += 1
 
-classification_rate = counter / N_EXAMINEES
-print(f'proportion of examinees classified incorrectly for at least K-1 attributes: {classification_rate}')
+    classification_rate = counter / n_examinees
+    print(f'proportion of examinees classified incorrectly for at least K-1 attributes: {classification_rate}')
 
 # p_MMS_log[:, :, rep] = np.log(p_MMS)
 # logLik_MMS[rep] = np.sum(np.sum(np.log(p_MMS)))

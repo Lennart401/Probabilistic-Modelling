@@ -9,19 +9,18 @@ from datetime import datetime
 
 TINY_CONST = 1e-10
 SHOW_PLOTS = False
-SAVE_PLOTS = True
+SAVE_PLOTS = False
 START_TIME = datetime.now().strftime("%Y%m%d-%H%M%S")
 PLOTS_PATH = f'plots/{START_TIME}'
 PLOT_SIZE = (22, 9)
-PLOT_DPI = 600
+PLOT_DPI = 50
 SAVE_RESULTS = True
 RESULTS_PATH = f'results/{START_TIME}'
 
 # Script length variables
 N_EXAMINEES = 500
-N_ITERATIONS = 3000
-N_REPEATS = 3
-
+N_ITERATIONS = 10000
+N_REPEATS = 1
 
 if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     print('Running in test mode...')
@@ -46,7 +45,6 @@ if SAVE_RESULTS:
 plt.rcParams["figure.figsize"] = PLOT_SIZE
 plt.rcParams["figure.dpi"] = PLOT_DPI
 
-
 # Simulation parameters
 lambda_1 = lambda_2 = 0.5
 beta_all = np.array([1, 1])
@@ -57,7 +55,7 @@ true_guessing = 0.1
 
 xi_0 = np.array([-0.95, -1.42, -0.66, 0.5, -0.05])
 xi_1 = np.array([1.34, 1.22, 1.08, 1.11, 0.97])
-theta_weight = 0.9
+theta_weight = 0.7
 
 strategy_a_q_matrix = np.array([
     [1, 1, 1, 1, 0],
@@ -112,11 +110,16 @@ n_strategies = len(np.unique(strategy_a_q_matrix))  # M strategies
 n_items = strategy_a_q_matrix.shape[0]  # J items, j-th item
 n_examinees = N_EXAMINEES
 
+slipping_trace_avg = np.ones([N_REPEATS,n_strategies])
+guessing_trace_avg = np.ones([N_REPEATS,n_strategies])
+pi_avg = np.ones(N_REPEATS)
+
 # ---------------------------------------------------------------------------------------------------------------------
 # SIMULATION THE EXAMINEES TAKING A TEST
 # ---------------------------------------------------------------------------------------------------------------------
 alpha_sim = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
-pi = dirichlet.rvs(beta_sim, size=1).flatten()
+pi = 1 - dirichlet.rvs(beta_sim, size=1).flatten()
+pi_true = pi
 s_c = np.ones((n_items, n_strategies)) * (1 - true_slipping)
 g = np.ones((n_items, n_strategies)) * true_guessing
 
@@ -164,7 +167,8 @@ for rep in range(repititions):
     s_c = 1 - np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
     g = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
     c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
-    theta = np.array(norm.rvs(0, 1, size=n_examinees))
+    theta = np.array(beta.rvs(2, 2, size=n_examinees))
+
 
     # Start the MCMC
     print('\nRepition: ', rep)
@@ -176,7 +180,7 @@ for rep in range(repititions):
         # draw pi using Gibbs Sampler (always accept, draw from conditional posterior)
         membership_counts = np.array([np.sum(c == m) for m in range(n_strategies)])
         # membership_counts = np.flip(membership_counts)
-        pi = dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
+        pi = 1 - dirichlet.rvs(beta_all + membership_counts, size=1).flatten()
         pi_hat[rep, WWW] = pi
 
         # draw c (strategy membership parameter), using Gibbs Sampler (always accept, draw from conditional posterior)
@@ -225,7 +229,13 @@ for rep in range(repititions):
         # draw theta
         # TODO parallelize
         for examinee in range(n_examinees):
-            theta_new = norm.rvs(theta[examinee], 1)
+            alpha_param = 2
+            beta_param = 2
+            if theta[examinee] >= 0.5:
+                alpha_param += theta[examinee]
+            else:
+                beta_param += theta[examinee]
+            theta_new = beta.rvs(alpha_param, beta_param)
 
             # Ratio of likelihoods for the new and prior theta values
             tem = np.add(xi_0, xi_1 * theta[examinee])
@@ -233,8 +243,7 @@ for rep in range(repititions):
 
             tem_new = np.add(xi_0, xi_1 * theta_new)
             p_alpha_theta_new = np.exp(tem_new) / (1 + np.exp(tem_new))
-
-            likelihood = np.prod(p_alpha_theta_new) / np.prod(p_alpha_theta)
+            likelihood = (np.prod(p_alpha_theta_new) * beta.pdf(theta_new,alpha_param,beta_param)) / (np.prod(p_alpha_theta) * beta.pdf(theta[examinee],alpha_param,beta_param))
 
             if likelihood >= np.random.rand():
                 theta[examinee] = theta_new
@@ -337,9 +346,6 @@ for rep in range(repititions):
 
     alpha_final = np.round(alpha_avg)
 
-    slipping_trace = np.mean(1 - slipping[rep], axis=1)
-    guessing_trace = np.mean(guessing[rep], axis=1)
-
     eta = np.zeros(shape=(n_examinees, n_items, n_strategies))
     for i in range(n_examinees):
         for j in range(n_items):
@@ -348,6 +354,9 @@ for rep in range(repititions):
 
     p_MMS = np.zeros((n_examinees, n_items))
     score_pred = np.zeros((n_examinees, n_items))
+
+    slipping_trace = np.mean(1 - slipping[rep], axis=1)
+    guessing_trace = np.mean(guessing[rep], axis=1)
 
     slipping_mean = np.mean(slipping[rep, BI:], axis=0)
     guessing_mean = np.mean(guessing[rep, BI:], axis=0)
@@ -427,6 +436,7 @@ for rep in range(repititions):
 
     # alpha (difference, simulated and sampled) - latent skill vector
     alpha_diff = np.abs(alpha_sim - alpha)
+    print(f'weight for mu {theta_weight}: {np.sum(alpha_diff)/(n_attributes * n_examinees)}')
 
     fig, ax = plt.subplots(nrows=3, ncols=1)
     alpha_diff_ax = ax[0].matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')
@@ -461,6 +471,90 @@ for rep in range(repititions):
     plt.clf()
     plt.close()
 
+    # Theta values
+    print(theta)
+
+    if SAVE_RESULTS:
+        np.savez(f'{RESULTS_PATH}/{rep}.npz', alpha=alpha, c=c, pi=pi, mu=mu, s_c=s_c, g=g)
+
+
+    # Keep track of avg values over repetitions 
+    pi_avg[rep] = pi_mean[0]
+    slipping_trace_avg[rep] = np.mean(slipping_trace, axis = 0)
+    guessing_trace_avg[rep] = np.mean(guessing_trace, axis = 0)
+
+# -----------------------------------------------------------------------------------------------------------------
+# Error Measures 
+# -----------------------------------------------------------------------------------------------------------------
+# Bias 
+Bias_slipping_1 = 1/N_REPEATS * np.sum([slipping_trace_avg[rep,0] - true_slipping for rep in range(N_REPEATS)])
+Bias_guessing_1 = 1/N_REPEATS * np.sum([guessing_trace_avg[rep,0] - true_guessing for rep in range(N_REPEATS)])
+Bias_slipping_2 = 1/N_REPEATS * np.sum([slipping_trace_avg[rep,1] - true_slipping for rep in range(N_REPEATS)])
+Bias_guessing_2 = 1/N_REPEATS * np.sum([guessing_trace_avg[rep,1] - true_guessing for rep in range(N_REPEATS)])
+Bias_pi = 1/N_REPEATS * np.sum([pi_avg[rep] - (1-pi_true[0]) for rep in range(N_REPEATS)])
+# MSE
+MSE_slipping_1 = 1/N_REPEATS * np.sum([(slipping_trace_avg[rep,0] - true_slipping)**2 for rep in range(N_REPEATS)])
+MSE_guessing_1 = 1/N_REPEATS * np.sum([(guessing_trace_avg[rep,0] - true_guessing)**2 for rep in range(N_REPEATS)])
+MSE_slipping_2 = 1/N_REPEATS * np.sum([(slipping_trace_avg[rep,1] - true_slipping)**2 for rep in range(N_REPEATS)])
+MSE_guessing_2 = 1/N_REPEATS * np.sum([(guessing_trace_avg[rep,1] - true_guessing)**2 for rep in range(N_REPEATS)])
+MSE_pi = 1/N_REPEATS * np.sum([(pi_avg[rep] - (1 -pi_true[0]))**2 for rep in range(N_REPEATS)])
+# SD 
+SD_slipping = 1/N_REPEATS * np.sum(np.std(slipping[rep,BI:]) for rep in range(N_REPEATS))
+SD_guessing = 1/N_REPEATS * np.sum(np.std(guessing[rep,BI:]) for rep in range(N_REPEATS))
+SD_pi = 1/N_REPEATS * np.sum(np.std(pi_hat[rep,BI:,0]) for rep in range(N_REPEATS))
+
+print(f'Bias slipping 1: {Bias_slipping_1} & Bias slipping 2: {Bias_slipping_2}; Bias guessing 1: {Bias_guessing_1} & Bias guessing 2: {Bias_guessing_2}; Bias pi: {Bias_pi}')
+print(f'MSE slipping 1: {MSE_slipping_1} & MSE slipping 2: {MSE_slipping_2}; MSE guessing 1: {MSE_guessing_1} & MSE guessing 2: {MSE_guessing_2}; MSE pi: {MSE_pi}')
+print(f'SD slipping: {SD_slipping}; SD guessing: {SD_guessing}; SD pi: {SD_pi}')
+
+# Attribute Recovery Error Measure 
+# Marginal correct classification rate (for each attribute)
+for i, row in enumerate(alpha_diff.T):
+    error = (np.sum(row)/n_examinees)
+    print(f'error for attribute {i}: {error}')
+
+# proportion of examinees classified correctly for all K attributes
+counter = 0
+for column in alpha_diff:
+    if np.all(column == 0):
+        counter += 1
+    else: 
+        pass
+classification_rate = counter / N_EXAMINEES
+print(f'proportion of examinees classified correctly for all K attributes: {classification_rate}')
+
+# proportion of examinees classified correctly for at least K-1 attributes
+counter = 0
+for i,row in enumerate(alpha_diff):
+    counter_rows = 0
+    for j,attribute in enumerate(row):
+        if alpha_diff[i, j] == 0:
+            counter_rows += 1
+        else: 
+            pass
+    if counter_rows >= n_attributes-1:
+        counter += 1 
+    else: 
+        pass
+classification_rate = counter / N_EXAMINEES
+print(f'proportion of examinees classified correctly for at least K-1 attributes: {classification_rate}')
+
+# proportion of examinees classified incorrectly for K-1 or K attributes
+counter = 0
+for i, row in enumerate(alpha_diff):
+    counter_rows = 0
+    for j,column in enumerate(alpha_diff.T):
+        if alpha_diff[i, j] == 1:
+            counter_rows += 1
+        else: 
+            pass
+    if counter_rows >= n_attributes-1:
+        counter += 1 
+    else: 
+        pass
+classification_rate = counter / N_EXAMINEES
+print(f'proportion of examinees classified incorrectly for at least K-1 attributes: {classification_rate}')
+
     # score and alpha together in one plot
     # fig, ax = plt.subplots(nrows=2, ncols=2)
     # alpha_sim_ax = ax[0, 0].matshow(alpha_sim.T, aspect='auto', cmap=cmap)
@@ -481,8 +575,6 @@ for rep in range(repititions):
     # plt.close()
 
     # SAVING THE RESULTS
-    if SAVE_RESULTS:
-        np.savez(f'{RESULTS_PATH}/{rep}.npz', alpha=alpha, c=c, pi=pi, mu=mu, s_c=s_c, g=g)
 
     # p_MMS_log[:, :, rep] = np.log(p_MMS)
     # logLik_MMS[rep] = np.sum(np.sum(np.log(p_MMS)))

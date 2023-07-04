@@ -18,7 +18,7 @@ PLOT_SIZE = (22, 9)
 PLOT_DPI = 600
 SAVE_RESULTS = True
 RESULTS_PATH = f'results/{RUN_NAME}-{START_TIME}'
-USE_ORIGINAL_MODEL = True
+USE_ORIGINAL_MODEL = False
 USE_EXTENSION_LAMBDA = False
 USE_EXTENSION_THETA = False
 USE_REAL_DATA = False
@@ -363,15 +363,6 @@ theta_hat = np.zeros((repetitions, EM, n_examinees))
 lambda_0_hat = np.zeros((repetitions, EM, n_attributes))
 lambda_1_hat = np.zeros((repetitions, EM, n_attributes))
 
-# after burn-in variables
-bi_counter = 0
-alpha_sum = np.zeros((n_examinees, n_attributes))
-s_c_sum = np.zeros((n_items, n_strategies))
-g_sum = np.zeros((n_items, n_strategies))
-
-# for after the burn-in period
-alpha_diff = np.zeros((n_examinees, n_attributes))
-
 for rep in range(repetitions):
     # Initial values
     alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
@@ -387,6 +378,15 @@ for rep in range(repetitions):
     else:
         lambda_0 = np.array([-0.95, -1.42, -0.66, 0.5, -0.05])
         lambda_1 = np.array([1.34, 1.22, 1.08, 1.11, 0.97])
+
+    # after burn-in variables
+    bi_counter = 0
+    alpha_sum = np.zeros((n_examinees, n_attributes))
+    s_c_sum = np.zeros((n_items, n_strategies))
+    g_sum = np.zeros((n_items, n_strategies))
+
+    # for after the burn-in period
+    alpha_diff = np.zeros((n_examinees, n_attributes))
 
     # Start the MCMC
     print('\nRepetition: ', rep)

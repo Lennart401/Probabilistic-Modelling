@@ -244,7 +244,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
 
 
 if __name__ == '__main__':
-    studies = ['s1_500', 's1_1000', 's2_20', 's2_30', 's3']
+    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3']
     # get the full folder names from their closest matches in results/
     directory = pathlib.Path('results')
     study_directories = [next(directory.glob(f'{study}*')) for study in studies]

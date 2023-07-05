@@ -1,6 +1,14 @@
+import os
+import pathlib
+
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import pandas as pd
+
+
+RESULTS_FOLDER = pathlib.Path('results')
+RESULT_PLOTS_FOLDER = pathlib.Path('result_plots')
 
 
 def gelman_rubin(chains, burn_in=0):
@@ -40,51 +48,7 @@ def gelman_rubin(chains, burn_in=0):
     return R_hat
 
 
-def plot_chains(chains, color=None, ylim=None, title=None):
-    """
-    Plot trace and density plot of MCMC chains.
-
-    Args:
-        chains (list of 1D numpy arrays): A list containing MCMC chains
-        ylim (tuple of floats): The y-axis limits for the trace plots
-        title (str): The title of the plot
-
-    """
-    # Number of chains
-    m = len(chains)
-
-    # Create a figure with two subplots
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-
-    # Plot the trace plots on the left subplot
-    for i, chain in enumerate(chains):
-        axes[0].plot(chain, color=color, alpha=1/m)
-    axes[0].set_title('Trace plots')
-    axes[0].set_xlabel('Iteration')
-    axes[0].set_ylabel('Value')
-    axes[0].legend()
-
-    if ylim is not None:
-        axes[0].set_ylim(ylim)
-
-    # Plot the density plots on the right subplot
-    for chain in chains:
-        sns.kdeplot(chain, ax=axes[1], color=color, fill=True, alpha=2/m)
-    axes[1].set_title('Density plots')
-    axes[1].set_xlabel('Value')
-    axes[1].set_ylabel('Density')
-
-    if ylim is not None:
-        axes[1].set_xlim(ylim)
-
-    # Show plot
-    if title is not None:
-        plt.suptitle(title)
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_multiple_chains(chains_dict, colors=None, ylim=None, figure_title=None):
+def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_path=None):
     """
     Plot trace and density plot of MCMC chains.
 
@@ -93,19 +57,21 @@ def plot_multiple_chains(chains_dict, colors=None, ylim=None, figure_title=None)
         colors (dict): A dictionary mapping the title of each chain to a color
         ylim (tuple of floats): The y-axis limits for the trace plots
         figure_title (str): The title of the plot
+        save_path: The path to save the plot
 
     """
     # Number of chains
     m = len(next(iter(chains_dict.values())))
 
     # Create a figure with two subplots
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    fig, axes = plt.subplots(1, 2, figsize=(18, 6))
 
     # Plot the trace plots on the left subplot
     for title, chains in chains_dict.items():
         color = colors[title] if colors is not None else None
-        for chain in chains:
-            axes[0].plot(chain, color=color, alpha=2/m)
+        for i, chain in enumerate(chains):
+            label = title if i == 0 else None
+            axes[0].plot(chain, color=color, alpha=2/m, label=label)
 
     axes[0].set_title('Trace plots')
     axes[0].set_xlabel('Iteration')
@@ -132,61 +98,112 @@ def plot_multiple_chains(chains_dict, colors=None, ylim=None, figure_title=None)
     if figure_title is not None:
         plt.suptitle(figure_title)
     plt.tight_layout()
+
+    if save_path is not None:
+        os.makedirs(save_path.resolve().parent, exist_ok=True)
+        plt.savefig(save_path.resolve())
+
     plt.show()
 
-# Load chains from folder
-FOLDER = 'results/s1_500_examinees-20230704-000145'
-N_CHAINS = 10
-BURN_IN = 500
 
-# Load from FOLDER/{chain}.npz
-chains = []
-for i in range(N_CHAINS):
-    chains.append(np.load(f'{FOLDER}/{i}.npz'))
+def process_study(study_folder, save_plots=False, n_chains=10, burn_in=1000):
+    # Load chains
+    chains = []
+    for i in range(n_chains):
+        chains.append(np.load(RESULTS_FOLDER / study_folder / f'{i}.npz'))
 
-# For s, g, and pi, extract the chains
-s_0_chains = [np.mean(chain['slipping'], axis=1)[:, 0] for chain in chains]
-s_1_chains = [np.mean(chain['slipping'], axis=1)[:, 1] for chain in chains]
-g_0_chains = [np.mean(chain['guessing'], axis=1)[:, 0] for chain in chains]
-g_1_chains = [np.mean(chain['guessing'], axis=1)[:, 1] for chain in chains]
-pi_0_chains = [chain['pi_hat'][:, 0] for chain in chains]
-pi_1_chains = [chain['pi_hat'][:, 1] for chain in chains]
-c_chains = [np.mean(chain['c_hat'], axis=1) for chain in chains]
+    # For s, g, and pi, extract the chains
+    s_0_chains = [np.mean(chain['slipping'], axis=1)[:, 0] for chain in chains]
+    s_1_chains = [np.mean(chain['slipping'], axis=1)[:, 1] for chain in chains]
+    g_0_chains = [np.mean(chain['guessing'], axis=1)[:, 0] for chain in chains]
+    g_1_chains = [np.mean(chain['guessing'], axis=1)[:, 1] for chain in chains]
+    pi_0_chains = [chain['pi_hat'][:, 0] for chain in chains]
+    pi_1_chains = [chain['pi_hat'][:, 1] for chain in chains]
+    c_chains = [np.mean(chain['c_hat'], axis=1) for chain in chains]
 
-# Compute R-hat for all the chains
-print('R-hat for s_0:', gelman_rubin(s_0_chains, burn_in=BURN_IN))
-print('R-hat for s_1:', gelman_rubin(s_1_chains, burn_in=BURN_IN))
-print('R-hat for g_0:', gelman_rubin(g_0_chains, burn_in=BURN_IN))
-print('R-hat for g_1:', gelman_rubin(g_1_chains, burn_in=BURN_IN))
-print('R-hat for pi_0:', gelman_rubin(pi_0_chains, burn_in=BURN_IN))
-print('R-hat for pi_1:', gelman_rubin(pi_1_chains, burn_in=BURN_IN))
-print('R-hat for c:', gelman_rubin(c_chains, burn_in=BURN_IN))
+    # Compute R-hat for all the chains
+    r_hat_s_0 = gelman_rubin(s_0_chains, burn_in=burn_in)
+    r_hat_s_1 = gelman_rubin(s_1_chains, burn_in=burn_in)
+    r_hat_g_0 = gelman_rubin(g_0_chains, burn_in=burn_in)
+    r_hat_g_1 = gelman_rubin(g_1_chains, burn_in=burn_in)
+    r_hat_pi = gelman_rubin(pi_0_chains, burn_in=burn_in)
+    r_hat_c = gelman_rubin(c_chains, burn_in=burn_in)
 
-# Plot all the chains
-s_ylim = (0.6, 0.8)
-g_ylim = (0.0, 0.3)
+    # Create a pandas Series with the results
+    r_hat_series = pd.Series({'R-hat for s_0': r_hat_s_0,
+                              'R-hat for s_1': r_hat_s_1,
+                              'R-hat for g_0': r_hat_g_0,
+                              'R-hat for g_1': r_hat_g_1,
+                              'R-hat for pi': r_hat_pi,
+                              'R-hat for c': r_hat_c})
 
-# s_color = 'deepskyblue'
-s_color = 'yellowgreen'
-g_color = 'cornflowerblue'
+    # Print the Series
+    print(r_hat_series)
 
-plot_multiple_chains(
-    chains_dict={'Strategy A': s_0_chains, 'Strategy B': s_1_chains},
-    colors={'Strategy A': s_color, 'Strategy B': g_color},
-    ylim=s_ylim,
-    figure_title='Slipping parameter')
+    # Print the results for copy and paste into google sheets
+    print('\nCopy and paste into google sheets:')
+    for _, value in r_hat_series.items():
+        print(value)
 
-plot_multiple_chains(
-    chains_dict={'Strategy A': g_0_chains, 'Strategy B': g_1_chains},
-    colors={'Strategy A': s_color, 'Strategy B': g_color},
-    ylim=g_ylim, figure_title='Guessing parameter')
+    # Plot all the chains
+    s_ylim = (0.6, 0.8)
+    g_ylim = (0.0, 0.3)
 
-plot_multiple_chains(
-    chains_dict={'Strategy A': pi_0_chains, 'Strategy B': pi_1_chains},
-    colors={'Strategy A': s_color, 'Strategy B': g_color},
-    figure_title='Mixing parameter')
+    # s_color = 'deepskyblue'
+    s0_color = 'yellowgreen'
+    s1_color = 'cornflowerblue'
+    g0_color = 'lightcoral'
+    g1_color = 'khaki'
 
-plot_chains(c_chains, color='mediumorchid', title='Strategy membership parameter mean')
+    plot_chains(
+        chains_dict={'Strategy A': s_0_chains, 'Strategy B': s_1_chains},
+        colors={'Strategy A': s0_color, 'Strategy B': s1_color},
+        ylim=s_ylim,
+        figure_title='Slipping parameter',
+        save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping.png' if save_plots else None,
+    )
+
+    plot_chains(
+        chains_dict={'Strategy A': g_0_chains, 'Strategy B': g_1_chains},
+        colors={'Strategy A': g0_color, 'Strategy B': g1_color},
+        ylim=g_ylim, figure_title='Guessing parameter',
+        save_path=RESULT_PLOTS_FOLDER / study_folder / 'guessing.png' if save_plots else None,
+    )
+
+    plot_chains(
+        chains_dict={
+            'Slipping Strategy A': s_0_chains, 'Slipping Strategy B': s_1_chains,
+            'Guessing Strategy A': g_0_chains, 'Guessing Strategy B': g_1_chains,
+        },
+        colors={
+            'Slipping Strategy A': s0_color, 'Slipping Strategy B': s1_color,
+            'Guessing Strategy A': g0_color, 'Guessing Strategy B': g1_color,
+        },
+        figure_title='Slipping & Guessing Parameters',
+        save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping_guessing.png' if save_plots else None,
+    )
+
+    plot_chains(
+        chains_dict={'Strategy A': pi_0_chains, 'Strategy B': pi_1_chains},
+        colors={'Strategy A': s0_color, 'Strategy B': s1_color},
+        figure_title='Mixing parameter',
+        save_path=RESULT_PLOTS_FOLDER / study_folder / 'mixing.png' if save_plots else None,
+    )
+
+    plot_chains(
+        chains_dict={'C': c_chains},
+        colors={'C': 'mediumorchid'},
+        figure_title='Strategy membership parameter mean',
+        save_path=RESULT_PLOTS_FOLDER / study_folder / 'c.png' if save_plots else None,
+    )
 
 
+if __name__ == '__main__':
+    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3']
+    # get the full folder names from their closest matches in results/
+    directory = pathlib.Path('results')
+    study_directories = [next(directory.glob(f'{study}*')) for study in studies]
 
+    for study_folder in study_directories:
+        print(f'\nProcessing {study_folder}')
+        process_study(study_folder.name, save_plots=True)

@@ -812,9 +812,9 @@ for rep in range(repetitions):
             score_pred=score_pred,
             score_diff=score_diff,
             p_MMS=p_MMS,
-            alpha_sim=alpha_sim,
+            alpha_sim=alpha_sim if not USE_REAL_DATA else None,
             alpha_final=alpha_final,
-            alpha_diff=alpha_diff,
+            alpha_diff=alpha_diff if not USE_REAL_DATA else None,
             slipping_trace=slipping_trace[rep],
             guessing_trace=guessing_trace[rep],
         )

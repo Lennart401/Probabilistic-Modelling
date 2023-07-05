@@ -106,7 +106,7 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
     plt.show()
 
 
-def process_study(study_folder, save_plots=False, n_chains=10, burn_in=1000):
+def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10, burn_in=1000):
     # Load chains
     chains = []
     for i in range(n_chains):
@@ -144,6 +144,51 @@ def process_study(study_folder, save_plots=False, n_chains=10, burn_in=1000):
     print('\nCopy and paste into google sheets:')
     for _, value in r_hat_series.items():
         print(value)
+
+    # Compute alpha diff error measures
+    print('\nAlpha diff error measures:')
+
+    alpha_pred_chains = [np.mean(chain['alpha_hat'][burn_in:], axis=0) for chain in chains]
+    alpha_final = np.round(np.mean(np.stack(alpha_pred_chains), axis=0))
+    alpha_sim = chains[0]['alpha_sim']
+
+    alpha_diff = np.abs(alpha_final - alpha_sim)
+
+    # Error for all attributes
+    total_error = np.mean(alpha_diff)
+
+    # Marginal correct classification rate (for each attribute)
+    attribute_errors = np.mean(alpha_diff, axis=0)
+
+    # Proportion of examinees classified correctly for all K attributes
+    correctly_classified_all = np.all(alpha_diff == 0, axis=1).mean()
+
+    # Proportion of examinees classified correctly for at least K-1 attributes
+    correctly_classified_k_minus_1 = np.sum(alpha_diff == 0, axis=1) >= alpha_diff.shape[1] - 1
+    correctly_classified_k_minus_1_rate = correctly_classified_k_minus_1.mean()
+
+    # Proportion of examinees classified incorrectly for K-1 or K attributes
+    incorrectly_classified_k_minus_1 = np.sum(alpha_diff == 1, axis=1) >= alpha_diff.shape[1] - 1
+    incorrectly_classified_k_minus_1_rate = incorrectly_classified_k_minus_1.mean()
+
+    # Storing error measures in a Pandas Series
+    error_measures = pd.Series({
+        'Total Error': total_error,
+        **{f'Error for Attribute {i}': error for i, error in enumerate(attribute_errors)},
+        'Proportion Correctly Classified (All Attributes)': correctly_classified_all,
+        'Proportion Correctly Classified (At Least K-1 Attributes)': correctly_classified_k_minus_1_rate,
+        'Proportion Incorrectly Classified (K-1 or K Attributes)': incorrectly_classified_k_minus_1_rate
+    })
+
+    print(error_measures)
+
+    # Print the results for copy and paste into google sheets
+    print('\nCopy and paste into google sheets:')
+    for _, value in error_measures.items():
+        print(value)
+
+    if skip_plots:
+        return
 
     # Plot all the chains
     s_ylim = (0.6, 0.8)
@@ -199,11 +244,11 @@ def process_study(study_folder, save_plots=False, n_chains=10, burn_in=1000):
 
 
 if __name__ == '__main__':
-    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3']
+    studies = ['s1_500', 's1_1000', 's2_20', 's2_30', 's3']
     # get the full folder names from their closest matches in results/
     directory = pathlib.Path('results')
     study_directories = [next(directory.glob(f'{study}*')) for study in studies]
 
     for study_folder in study_directories:
         print(f'\nProcessing {study_folder}')
-        process_study(study_folder.name, save_plots=True)
+        process_study(study_folder.name, save_plots=True, skip_plots=True)

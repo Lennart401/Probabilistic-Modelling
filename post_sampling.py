@@ -106,7 +106,7 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
     plt.show()
 
 
-def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10, burn_in=1000):
+def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10, burn_in=1000, real_data=False):
     # Load chains
     chains = []
     for i in range(n_chains):
@@ -120,6 +120,9 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
     pi_0_chains = [chain['pi_hat'][:, 0] for chain in chains]
     pi_1_chains = [chain['pi_hat'][:, 1] for chain in chains]
     c_chains = [np.mean(chain['c_hat'], axis=1) for chain in chains]
+
+    c_values = np.mean(np.stack([np.unique(chain['c_hat'], return_counts=True)[1] / chain['c_hat'].shape[0] for chain in chains]), axis=0)
+    print('Average membership:', c_values)
 
     # Compute R-hat for all the chains
     r_hat_s_0 = gelman_rubin(s_0_chains, burn_in=burn_in)
@@ -146,109 +149,123 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
         print(value)
 
     # Compute alpha diff error measures
-    print('\nAlpha diff error measures:')
+    if not real_data:
+        print('\nAlpha diff error measures:')
 
-    alpha_pred_chains = [np.mean(chain['alpha_hat'][burn_in:], axis=0) for chain in chains]
-    alpha_final = np.round(np.mean(np.stack(alpha_pred_chains), axis=0))
-    alpha_sim = chains[0]['alpha_sim']
+        alpha_pred_chains = [np.mean(chain['alpha_hat'][burn_in:], axis=0) for chain in chains]
+        alpha_final = np.round(np.mean(np.stack(alpha_pred_chains), axis=0))
+        alpha_sim = chains[0]['alpha_sim']
 
-    alpha_diff = np.abs(alpha_final - alpha_sim)
+        alpha_diff = np.abs(alpha_final - alpha_sim)
 
-    # Error for all attributes
-    total_error = np.mean(alpha_diff)
+        # Error for all attributes
+        total_error = np.mean(alpha_diff)
 
-    # Marginal correct classification rate (for each attribute)
-    attribute_errors = np.mean(alpha_diff, axis=0)
+        # Marginal correct classification rate (for each attribute)
+        attribute_errors = np.mean(alpha_diff, axis=0)
 
-    # Proportion of examinees classified correctly for all K attributes
-    correctly_classified_all = np.all(alpha_diff == 0, axis=1).mean()
+        # Proportion of examinees classified correctly for all K attributes
+        correctly_classified_all = np.all(alpha_diff == 0, axis=1).mean()
 
-    # Proportion of examinees classified correctly for at least K-1 attributes
-    correctly_classified_k_minus_1 = np.sum(alpha_diff == 0, axis=1) >= alpha_diff.shape[1] - 1
-    correctly_classified_k_minus_1_rate = correctly_classified_k_minus_1.mean()
+        # Proportion of examinees classified correctly for at least K-1 attributes
+        correctly_classified_k_minus_1 = np.sum(alpha_diff == 0, axis=1) >= alpha_diff.shape[1] - 1
+        correctly_classified_k_minus_1_rate = correctly_classified_k_minus_1.mean()
 
-    # Proportion of examinees classified incorrectly for K-1 or K attributes
-    incorrectly_classified_k_minus_1 = np.sum(alpha_diff == 1, axis=1) >= alpha_diff.shape[1] - 1
-    incorrectly_classified_k_minus_1_rate = incorrectly_classified_k_minus_1.mean()
+        # Proportion of examinees classified incorrectly for K-1 or K attributes
+        incorrectly_classified_k_minus_1 = np.sum(alpha_diff == 1, axis=1) >= alpha_diff.shape[1] - 1
+        incorrectly_classified_k_minus_1_rate = incorrectly_classified_k_minus_1.mean()
 
-    # Storing error measures in a Pandas Series
-    error_measures = pd.Series({
-        'Total Error': total_error,
-        **{f'Error for Attribute {i}': error for i, error in enumerate(attribute_errors)},
-        'Proportion Correctly Classified (All Attributes)': correctly_classified_all,
-        'Proportion Correctly Classified (At Least K-1 Attributes)': correctly_classified_k_minus_1_rate,
-        'Proportion Incorrectly Classified (K-1 or K Attributes)': incorrectly_classified_k_minus_1_rate
-    })
+        # Storing error measures in a Pandas Series
+        error_measures = pd.Series({
+            'Total Error': total_error,
+            **{f'Error for Attribute {i}': error for i, error in enumerate(attribute_errors)},
+            'Proportion Correctly Classified (All Attributes)': correctly_classified_all,
+            'Proportion Correctly Classified (At Least K-1 Attributes)': correctly_classified_k_minus_1_rate,
+            'Proportion Incorrectly Classified (K-1 or K Attributes)': incorrectly_classified_k_minus_1_rate
+        })
 
-    print(error_measures)
+        print(error_measures)
 
-    # Print the results for copy and paste into google sheets
-    print('\nCopy and paste into google sheets:')
-    for _, value in error_measures.items():
-        print(value)
+        # Print the results for copy and paste into google sheets
+        print('\nCopy and paste into google sheets:')
+        for _, value in error_measures.items():
+            print(value)
 
-    if skip_plots:
-        return
+        # Plot alpha diff
+        if not skip_plots:
+            fig, ax = plt.subplots(figsize=(18, 6))
+            mat_ax = ax.matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')
+            fig.colorbar(mat_ax, location='right')
+            ax.set_title('Alpha Divergence')
+            plt.tight_layout()
+            if save_plots:
+                (RESULT_PLOTS_FOLDER / study_folder).mkdir(parents=True, exist_ok=True)
+                plt.savefig(RESULT_PLOTS_FOLDER / study_folder / 'alpha_diff.png')
+            plt.show()
 
-    # Plot all the chains
-    s_ylim = (0.6, 0.8)
-    g_ylim = (0.0, 0.3)
+    if not skip_plots:
+        # Plot all the chains
+        s_ylim = (0.6, 0.8)
+        g_ylim = (0.0, 0.3)
 
-    # s_color = 'deepskyblue'
-    s0_color = 'yellowgreen'
-    s1_color = 'cornflowerblue'
-    g0_color = 'lightcoral'
-    g1_color = 'khaki'
+        # s_color = 'deepskyblue'
+        s0_color = 'yellowgreen'
+        s1_color = 'cornflowerblue'
+        g0_color = 'lightcoral'
+        g1_color = 'khaki'
 
-    plot_chains(
-        chains_dict={'Strategy A': s_0_chains, 'Strategy B': s_1_chains},
-        colors={'Strategy A': s0_color, 'Strategy B': s1_color},
-        ylim=s_ylim,
-        figure_title='Slipping parameter',
-        save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping.png' if save_plots else None,
-    )
+        plot_chains(
+            chains_dict={'Strategy A': s_0_chains, 'Strategy B': s_1_chains},
+            colors={'Strategy A': s0_color, 'Strategy B': s1_color},
+            ylim=s_ylim,
+            figure_title='Slipping parameter',
+            save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping.png' if save_plots else None,
+        )
 
-    plot_chains(
-        chains_dict={'Strategy A': g_0_chains, 'Strategy B': g_1_chains},
-        colors={'Strategy A': g0_color, 'Strategy B': g1_color},
-        ylim=g_ylim, figure_title='Guessing parameter',
-        save_path=RESULT_PLOTS_FOLDER / study_folder / 'guessing.png' if save_plots else None,
-    )
+        plot_chains(
+            chains_dict={'Strategy A': g_0_chains, 'Strategy B': g_1_chains},
+            colors={'Strategy A': g0_color, 'Strategy B': g1_color},
+            ylim=g_ylim, figure_title='Guessing parameter',
+            save_path=RESULT_PLOTS_FOLDER / study_folder / 'guessing.png' if save_plots else None,
+        )
 
-    plot_chains(
-        chains_dict={
-            'Slipping Strategy A': s_0_chains, 'Slipping Strategy B': s_1_chains,
-            'Guessing Strategy A': g_0_chains, 'Guessing Strategy B': g_1_chains,
-        },
-        colors={
-            'Slipping Strategy A': s0_color, 'Slipping Strategy B': s1_color,
-            'Guessing Strategy A': g0_color, 'Guessing Strategy B': g1_color,
-        },
-        figure_title='Slipping & Guessing Parameters',
-        save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping_guessing.png' if save_plots else None,
-    )
+        plot_chains(
+            chains_dict={
+                'Slipping Strategy A': s_0_chains, 'Slipping Strategy B': s_1_chains,
+                'Guessing Strategy A': g_0_chains, 'Guessing Strategy B': g_1_chains,
+            },
+            colors={
+                'Slipping Strategy A': s0_color, 'Slipping Strategy B': s1_color,
+                'Guessing Strategy A': g0_color, 'Guessing Strategy B': g1_color,
+            },
+            figure_title='Slipping & Guessing Parameters',
+            save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping_guessing.png' if save_plots else None,
+        )
 
-    plot_chains(
-        chains_dict={'Strategy A': pi_0_chains, 'Strategy B': pi_1_chains},
-        colors={'Strategy A': s0_color, 'Strategy B': s1_color},
-        figure_title='Mixing parameter',
-        save_path=RESULT_PLOTS_FOLDER / study_folder / 'mixing.png' if save_plots else None,
-    )
+        plot_chains(
+            chains_dict={'Strategy A': pi_0_chains, 'Strategy B': pi_1_chains},
+            colors={'Strategy A': s0_color, 'Strategy B': s1_color},
+            figure_title='Mixing parameter',
+            save_path=RESULT_PLOTS_FOLDER / study_folder / 'mixing.png' if save_plots else None,
+        )
 
-    plot_chains(
-        chains_dict={'C': c_chains},
-        colors={'C': 'mediumorchid'},
-        figure_title='Strategy membership parameter mean',
-        save_path=RESULT_PLOTS_FOLDER / study_folder / 'c.png' if save_plots else None,
-    )
+        plot_chains(
+            chains_dict={'C': c_chains},
+            colors={'C': 'mediumorchid'},
+            figure_title='Strategy membership parameter mean',
+            save_path=RESULT_PLOTS_FOLDER / study_folder / 'c.png' if save_plots else None,
+        )
 
 
 if __name__ == '__main__':
-    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3']
+    process_study('normal-model-20230704-154206', save_plots=True, real_data=True)
+    exit()
+
+    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3'][2:3]
     # get the full folder names from their closest matches in results/
     directory = pathlib.Path('results')
     study_directories = [next(directory.glob(f'{study}*')) for study in studies]
 
     for study_folder in study_directories:
         print(f'\nProcessing {study_folder}')
-        process_study(study_folder.name, save_plots=True, skip_plots=True)
+        process_study(study_folder.name, save_plots=True)

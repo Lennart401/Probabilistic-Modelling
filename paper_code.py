@@ -25,9 +25,9 @@ USE_REAL_DATA = False
 SIMULATION_DATA = None  # 'simulation_data/data.npz'
 
 # Script length variables
-N_EXAMINEES = 50
-N_ITERATIONS = 2500
-N_REPEATS = 10
+N_EXAMINEES = 500
+N_ITERATIONS = 10000
+N_REPEATS = 50
 
 if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     print('Running in test mode...')
@@ -919,6 +919,7 @@ for rep in range(repetitions):
             alpha_diff=alpha_diff if not USE_REAL_DATA else None,
             slipping_trace=slipping_trace[rep],
             guessing_trace=guessing_trace[rep],
+            mu_weight_hat=mu_weight_hat[rep],
         )
 
     # Keep track of avg values over repetitions

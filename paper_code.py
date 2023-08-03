@@ -35,8 +35,8 @@ if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     SAVE_PLOTS = False
     SAVE_RESULTS = False
     PLOT_DPI = 100
-    N_EXAMINEES = 100
-    N_ITERATIONS = 1000
+    N_EXAMINEES = 500
+    N_ITERATIONS = 200
     N_REPEATS = 1
 
 if SAVE_PLOTS:
@@ -58,7 +58,7 @@ pi_hyperparams_simulation = np.array([1, 1]) if not USE_ORIGINAL_MODEL else np.a
 true_slipping = 0.3
 true_guessing = 0.1
 
-theta_weight = 0.5
+mu_weight = 0.5  # only used if USE_EXTENSION_THETA is True; determines how much the mu is weighted
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Q MATRICES
@@ -364,6 +364,7 @@ alpha_hat = np.zeros((repetitions, EM, n_examinees, n_attributes))
 theta_hat = np.zeros((repetitions, EM, n_examinees))
 lambda_0_hat = np.zeros((repetitions, EM, n_attributes))
 lambda_1_hat = np.zeros((repetitions, EM, n_attributes))
+mu_weight_hat = np.zeros((repetitions, EM))
 
 for rep in range(repetitions):
     # Initial values
@@ -393,6 +394,26 @@ for rep in range(repetitions):
     # Start the MCMC
     print('\nRepetition: ', rep)
     for WWW in tqdm(range(EM)):
+
+        mu_weight_hyperparameter_1 = 1
+        mu_weight_hyperparameter_2 = 1
+
+        mu_weights = []
+
+        for examinee in range(n_examinees):
+            strategy_membership = c[examinee]
+            mu_weight_new = beta.rvs(mu_weight_hyperparameter_1, mu_weight_hyperparameter_2)
+
+            probability_old = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) + (1 - mu_weight) * theta[examinee]
+            probability_new = mu_weight_new * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) + (1 - mu_weight_new) * theta[examinee]
+
+            likelihood_ratio = probability_new / probability_old
+
+            if likelihood_ratio >= np.random.rand():
+                mu_weights.append(mu_weight_new)
+
+        mu_weight = np.mean(mu_weights)
+        mu_weight_hat[rep, WWW] = mu_weight
 
         # -------------------------------------------------------------------------------------------------------------
         # GIBBS SAMPLING
@@ -427,11 +448,12 @@ for rep in range(repetitions):
                     likelihood *= np.maximum(p, TINY_CONST)  # likelihood
 
                 # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
-                prob_alpha = theta_weight * mu[strategy] + (1 - theta_weight) * theta[examinee] \
+                prob_alpha = mu_weight * mu[strategy] + (1 - mu_weight) * theta[examinee] \
                     if USE_EXTENSION_THETA \
                     else mu[strategy]
-                prior = np.prod(
-                    [bernoulli.pmf(alpha[examinee, attribute], prob_alpha) for attribute in range(n_attributes)])
+                # prior = np.prod(
+                #     [bernoulli.pmf(alpha[examinee, attribute], prob_alpha) for attribute in range(n_attributes)])
+                prior = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, prob_alpha)
                 Lc[strategy] = prior * likelihood * pi[strategy]  # posterior
 
             # c_hat[examinee, :] = 10 ** 5 * Lc
@@ -488,13 +510,13 @@ for rep in range(repetitions):
                         k=alpha[examinee, attribute],
                         p=1 / (1 + np.exp(-1.7 * lambda_1_new * (np.prod(theta) - lambda_0_new))))
 
-                    p_alpha_lambda_new_all.append(theta_weight \
+                    p_alpha_lambda_new_all.append(mu_weight \
                                                   * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
-                                                  + (1 - theta_weight) * probability_new)
+                                                  + (1 - mu_weight) * probability_new)
 
-                    p_alpha_lambda_all.append(theta_weight
+                    p_alpha_lambda_all.append(mu_weight
                                               * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
-                                              + (1 - theta_weight) * probability_old)
+                                              + (1 - mu_weight) * probability_old)
 
                 p_alpha_lambda = np.exp(np.sum(np.log(p_alpha_lambda_all)))
                 p_alpha_lambda_new = np.exp(np.sum(np.log(p_alpha_lambda_new_all)))
@@ -534,10 +556,10 @@ for rep in range(repetitions):
                                       attribute in range(n_attributes)])
 
                 # probability = theta_weight * mu[strategy_membership] + (1 - theta_weight) * theta[examinee]
-                probability = theta_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes,
-                                                       mu[strategy_membership]) + (1 - theta_weight) * p_ThetaNew
-                probability_old = theta_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes,
-                                                           mu[strategy_membership]) + (1 - theta_weight) * p_Theta
+                probability = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes,
+                                                    mu[strategy_membership]) + (1 - mu_weight) * p_ThetaNew
+                probability_old = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes,
+                                                        mu[strategy_membership]) + (1 - mu_weight) * p_Theta
 
                 LLa = probability / \
                       probability_old
@@ -573,11 +595,11 @@ for rep in range(repetitions):
                                                   attribute in range(n_attributes)])
 
                 # probability = theta_weight * mu[strategy_membership] + (1 - theta_weight) * theta[examinee]
-                probability = theta_weight * binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership]) + (
-                            1 - theta_weight) * p_NewAlpha_given_Theta
-                probability_old = theta_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes,
-                                                           mu[strategy_membership]) + (
-                                              1 - theta_weight) * p_alpha_given_Theta
+                probability = mu_weight * binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership]) + (
+                        1 - mu_weight) * p_NewAlpha_given_Theta
+                probability_old = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes,
+                                                        mu[strategy_membership]) + (
+                                          1 - mu_weight) * p_alpha_given_Theta
 
                 LLa = probability / \
                       probability_old
@@ -722,6 +744,18 @@ for rep in range(repetitions):
     plt.clf()
     plt.close()
 
+    # mu_weight
+    plt.plot(np.arange(EM), mu_weight_hat[rep])
+    plt.suptitle(f'mu_weight ({rep})')
+    plt.ylim([0, 1])
+    plt.tight_layout()
+    if SAVE_PLOTS:
+        plt.savefig(f'{PLOTS_PATH}/{rep}_mu_weight.png')
+    if SHOW_PLOTS:
+        plt.show()
+    plt.clf()
+    plt.close()
+
     # s and g - slipping and guessing parameters
     plt.plot(np.arange(EM), slipping_trace[:, 0], label='slipping strategy 1')
     plt.plot(np.arange(EM), slipping_trace[:, 1], label='slipping strategy 2')
@@ -814,7 +848,7 @@ for rep in range(repetitions):
     # alpha (difference, simulated and sampled) - latent skill vector
     else:
         alpha_diff = np.abs(alpha_sim - alpha_final)
-        print(f'weight for mu {theta_weight}: {np.sum(alpha_diff) / (n_attributes * n_examinees)}')
+        print(f'weight for mu {mu_weight}: {np.sum(alpha_diff) / (n_attributes * n_examinees)}')
 
         fig, ax = plt.subplots(nrows=3, ncols=1)
         alpha_diff_ax = ax[0].matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')

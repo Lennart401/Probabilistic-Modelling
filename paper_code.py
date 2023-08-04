@@ -448,13 +448,16 @@ for rep in range(repetitions):
                     likelihood *= np.maximum(p, TINY_CONST)  # likelihood
 
                 # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
-                prob_alpha = mu_weight * mu[strategy] + (1 - mu_weight) * theta[examinee] \
+                for attribute in range(n_attributes):
+                    likelihood_alpha_i_given_theta = bernoulli.pmf(k = alpha[examinee, attribute],p=1/(1+np.exp(-1.7*lambda_1[attribute]*(np.prod(theta) - lambda_0[attribute]))))
+                    likelihood_alpha_given_theta *= likelihood_alpha_i_given_theta
+                # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
+                prior = mu_weight * binom.pmf(np.sum(alpha[examinee,:]), n_attributes, mu[strategy]) + (1-mu_weight) * likelihood_alpha_given_theta \
                     if USE_EXTENSION_THETA \
                     else mu[strategy]
                 # prior = np.prod(
                 #     [bernoulli.pmf(alpha[examinee, attribute], prob_alpha) for attribute in range(n_attributes)])
-                prior = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, prob_alpha)
-                Lc[strategy] = prior * likelihood * pi[strategy]  # posterior
+                Lc[strategy] = prior * likelihood * pi[strategy]
 
             # c_hat[examinee, :] = 10 ** 5 * Lc
             # pp = Lc[1] / (Lc[0] + Lc[1])

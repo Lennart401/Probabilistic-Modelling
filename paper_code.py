@@ -39,6 +39,8 @@ if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     N_ITERATIONS = 2000
     N_REPEATS = 1
 
+print(f'Running with {N_EXAMINEES} examinees, {N_ITERATIONS} iterations, {N_REPEATS} repeats')
+
 if SAVE_PLOTS:
     print(f'Creating directory {PLOTS_PATH}...')
     os.makedirs(PLOTS_PATH)
@@ -437,7 +439,6 @@ for rep in range(repetitions):
         for examinee in range(n_examinees):
             # p(c_i = m | all other parameters)
             Lc = np.ones(n_strategies)
-            likelihood_alpha_given_theta = 1
             # TODO parallelize / vectorize
             for strategy in range(n_strategies):
                 likelihood = 1
@@ -453,8 +454,10 @@ for rep in range(repetitions):
                     likelihood *= np.maximum(p, TINY_CONST)  # likelihood
 
                 # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
+                likelihood_alpha_given_theta = 1
                 for attribute in range(n_attributes):
-                    likelihood_alpha_i_given_theta = bernoulli.pmf(k = alpha[examinee, attribute],p=1/(1+np.exp(-1.7*lambda_1[attribute]*(np.prod(theta) - lambda_0[attribute]))))
+                    likelihood_alpha_i_given_theta = bernoulli.pmf(k=alpha[examinee, attribute],
+                                                                   p=1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (np.prod(theta) - lambda_0[attribute]))))
                     likelihood_alpha_given_theta *= likelihood_alpha_i_given_theta
                 # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
                 prior = mu_weight * binom.pmf(np.sum(alpha[examinee,:]), n_attributes, mu[strategy]) + (1-mu_weight) * likelihood_alpha_given_theta \
@@ -502,9 +505,6 @@ for rep in range(repetitions):
                 upper = lambda_1[attribute] + 1
                 lambda_1_new = uniform.rvs(loc=lower, scale=upper - lower)
 
-                """
-                Implementation of full combined distribution alpha (with mu & theta/lambda)
-                """
                 p_alpha_lambda_all = []
                 p_alpha_lambda_new_all = []
 
@@ -553,9 +553,6 @@ for rep in range(repetitions):
 
                 # Ratio of likelihoods for the new and prior theta values
                 # for attribute in range(n_attributes):
-                """
-                Implementation of full combined distribution alpha (with mu & theta/lambda)
-                """
                 p_Theta = np.prod([bernoulli.pmf(k=alpha[examinee, attribute], p=1 / (
                             1 + np.exp(-1.7 * lambda_1[attribute] * (theta[examinee] - lambda_0[attribute])))) for
                                    attribute in range(n_attributes)])
@@ -595,19 +592,26 @@ for rep in range(repetitions):
             alpha_new = np.random.binomial(n=1, p=0.5, size=n_attributes)
 
             if USE_EXTENSION_THETA:
-                p_alpha_given_Theta = np.prod([bernoulli.pmf(k=alpha[examinee, attribute], p=1 / (
-                        1 + np.exp(-1.7 * lambda_1[attribute] * (theta[examinee] - lambda_0[attribute])))) for
-                                               attribute in range(n_attributes)])
-                p_NewAlpha_given_Theta = np.prod([bernoulli.pmf(k=alpha_new[attribute], p=1 / (
-                        1 + np.exp(-1.7 * lambda_1[attribute] * (theta[examinee] - lambda_0[attribute])))) for
-                                                  attribute in range(n_attributes)])
+                p_alpha_given_Theta = np.prod([
+                    bernoulli.pmf(k=alpha[examinee, attribute],
+                                  p=1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (theta[examinee] - lambda_0[attribute]))))
+                    for attribute in range(n_attributes)
+                ])
+                p_NewAlpha_given_Theta = np.prod([
+                    bernoulli.pmf(k=alpha_new[attribute],
+                                  p=1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (theta[examinee] - lambda_0[attribute]))))
+                    for attribute in range(n_attributes)
+                ])
 
                 # probability = theta_weight * mu[strategy_membership] + (1 - theta_weight) * theta[examinee]
-                probability = mu_weight * binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership]) + (
-                        1 - mu_weight) * p_NewAlpha_given_Theta
-                probability_old = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes,
-                                                        mu[strategy_membership]) + (
-                                          1 - mu_weight) * p_alpha_given_Theta
+                probability = mu_weight \
+                              * binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership]) \
+                              + (1 - mu_weight) \
+                              * p_NewAlpha_given_Theta
+                probability_old = mu_weight \
+                                  * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
+                                  + (1 - mu_weight) \
+                                  * p_alpha_given_Theta
 
                 LLa = probability / \
                       probability_old

@@ -120,6 +120,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
     pi_0_chains = [chain['pi_hat'][:, 0] for chain in chains]
     pi_1_chains = [chain['pi_hat'][:, 1] for chain in chains]
     c_chains = [np.mean(chain['c_hat'], axis=1) for chain in chains]
+    mu_weight_chains = [chain['mu_weight_hat'] for chain in chains] if 'mu_weight_hat' in chains[0] else None
 
     c_values = np.mean(np.stack([np.unique(chain['c_hat'], return_counts=True)[1] / chain['c_hat'].shape[0] for chain in chains]), axis=0)
     print('Average membership:', c_values)
@@ -255,6 +256,14 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
             figure_title='Strategy membership parameter mean',
             save_path=RESULT_PLOTS_FOLDER / study_folder / 'c.png' if save_plots else None,
         )
+
+        if mu_weight_chains is not None:
+            plot_chains(
+                chains_dict={'Mu Weight': mu_weight_chains},
+                colors={'Mu Weight': 'mediumorchid'},
+                figure_title='Mu Weight',
+                save_path=RESULT_PLOTS_FOLDER / study_folder / 'mu_weight.png' if save_plots else None,
+            )
 
 
 if __name__ == '__main__':

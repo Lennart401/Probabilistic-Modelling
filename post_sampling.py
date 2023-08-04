@@ -48,7 +48,8 @@ def gelman_rubin(chains, burn_in=0):
     return R_hat
 
 
-def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_path=None, show_plots=True):
+def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_path=None, show_plots=True,
+                split_burn_in=True):
     """
     Plot trace and density plot of MCMC chains.
 
@@ -59,6 +60,7 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
         figure_title (str): The title of the plot
         save_path: The path to save the plot
         show_plots (bool): Whether to show the plot
+        split_burn_in (bool): If True, then split the chains at the burn-in point and plot the two parts separately
 
     """
     # Print what is being plotted
@@ -67,36 +69,47 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
     # Number of chains
     m = len(next(iter(chains_dict.values())))
 
+    def plot_chains_on_axes(axes, start, end, show_burn_in_label=False):
+        # Plot the trace plots on the left subplot
+        for title, chains in chains_dict.items():
+            color = colors[title] if colors is not None else None
+            for i, chain in enumerate(chains):
+                label = title if i == 0 else None
+                axes[0].plot(np.arange(start, end), chain[start:end], color=color, alpha=2/m, label=label)
+
+        axes[0].set_title(f'Trace plots{" (burn-in)" if show_burn_in_label else ""}')
+        axes[0].set_xlabel('Iteration')
+        axes[0].set_ylabel('Value')
+        axes[0].legend()
+
+        if ylim is not None:
+            axes[0].set_ylim(ylim)
+
+        # Plot the density plots on the right subplot
+        for title, chains in chains_dict.items():
+            color = colors[title] if colors is not None else None
+            for chain in chains:
+                sns.kdeplot(chain[start:end], ax=axes[1], color=color, fill=True, alpha=1/m)
+
+        axes[1].set_title(f'Density plots{" (burn-in)" if show_burn_in_label else ""}')
+        axes[1].set_xlabel('Value')
+        axes[1].set_ylabel('Density')
+
+        if ylim is not None:
+            axes[1].set_xlim(ylim)
+
     # Create a figure with two subplots
-    fig, axes = plt.subplots(1, 2, figsize=(18, 6))
+    fig, axs = plt.subplots(nrows=2 if split_burn_in else 1, ncols=2, figsize=(18, 10))
+    start = 0
+    end = len(next(iter(chains_dict.values()))[0])
 
-    # Plot the trace plots on the left subplot
-    for title, chains in chains_dict.items():
-        color = colors[title] if colors is not None else None
-        for i, chain in enumerate(chains):
-            label = title if i == 0 else None
-            axes[0].plot(chain, color=color, alpha=2/m, label=label)
+    if split_burn_in:
+        half = int((end - start) / 2)
+        plot_chains_on_axes(axs[0, :], start, half, show_burn_in_label=True)
+        plot_chains_on_axes(axs[1, :], half, end, show_burn_in_label=False)
 
-    axes[0].set_title('Trace plots')
-    axes[0].set_xlabel('Iteration')
-    axes[0].set_ylabel('Value')
-    axes[0].legend()
-
-    if ylim is not None:
-        axes[0].set_ylim(ylim)
-
-    # Plot the density plots on the right subplot
-    for title, chains in chains_dict.items():
-        color = colors[title] if colors is not None else None
-        for chain in chains:
-            sns.kdeplot(chain, ax=axes[1], color=color, fill=True, alpha=1/m)
-
-    axes[1].set_title('Density plots')
-    axes[1].set_xlabel('Value')
-    axes[1].set_ylabel('Density')
-
-    if ylim is not None:
-        axes[1].set_xlim(ylim)
+    else:
+        plot_chains_on_axes(axs, start, end, show_burn_in_label=False)
 
     # Show plot
     if figure_title is not None:
@@ -213,7 +226,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='au
 
         # Plot alpha diff
         if not skip_plots:
-            print('Plotting alpha diff...')
+            print('\nPlotting alpha diff...')
             fig, ax = plt.subplots(figsize=(18, 6))
             mat_ax = ax.matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')
             fig.colorbar(mat_ax, location='right')

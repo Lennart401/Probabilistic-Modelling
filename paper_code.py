@@ -411,7 +411,7 @@ for rep in range(repetitions):
             likelihood_alpha_given_theta = 1
 
             for attribute in range(n_attributes):
-                likelihood_alpha_i_given_theta = bernoulli.pmf(k = alpha[examinee, attribute],p=1/(1+np.exp(-1.7*lambda_1[attribute]*(np.prod(theta) - lambda_0[attribute]))))
+                likelihood_alpha_i_given_theta = bernoulli.pmf(k=alpha[examinee, attribute], p=1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (np.prod(theta) - lambda_0[attribute]))))
                 likelihood_alpha_given_theta *= likelihood_alpha_i_given_theta
 
             probability_old = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) + (1 - mu_weight) * likelihood_alpha_given_theta

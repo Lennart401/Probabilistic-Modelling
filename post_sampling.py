@@ -111,12 +111,25 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
         plt.show()
 
 
-def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10, burn_in=1000, real_data=False,
+def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='auto', burn_in=1000, real_data=False,
                   show_plots=True):
     # Load chains
     chains = []
-    for i in range(n_chains):
-        chains.append(np.load(RESULTS_FOLDER / study_folder / f'{i}.npz'))
+
+    # Load all files names in the study folder, then sort by value
+    if n_chains == 'auto':
+        # Load all files names in the study folder, then sort by value
+        files = sorted((RESULTS_FOLDER / study_folder).glob('*.npz'), key=lambda x: int(x.name.split('.')[0]))
+        for file in files:
+            chains.append(np.load(file))
+
+    # Load a specific number of chains
+    elif isinstance(n_chains, int):
+        for i in range(n_chains):
+            chains.append(np.load(RESULTS_FOLDER / study_folder / f'{i}.npz'))
+
+    else:
+        raise ValueError('n_chains must be an integer or "auto"')
 
     # For s, g, and pi, extract the chains
     s_0_chains = [np.mean(chain['slipping'], axis=1)[:, 0] for chain in chains]

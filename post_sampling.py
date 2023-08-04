@@ -200,6 +200,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
 
         # Plot alpha diff
         if not skip_plots:
+            print('Plotting alpha diff...')
             fig, ax = plt.subplots(figsize=(18, 6))
             mat_ax = ax.matshow(1 - alpha_diff.T, aspect='auto', cmap='PiYG')
             fig.colorbar(mat_ax, location='right')
@@ -208,7 +209,9 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
             if save_plots:
                 (RESULT_PLOTS_FOLDER / study_folder).mkdir(parents=True, exist_ok=True)
                 plt.savefig(RESULT_PLOTS_FOLDER / study_folder / 'alpha_diff.png')
-            plt.show()
+
+            if show_plots:
+                plt.show()
 
     if not skip_plots:
         # Plot all the chains

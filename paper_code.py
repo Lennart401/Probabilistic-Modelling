@@ -43,11 +43,11 @@ print(f'Running with {N_EXAMINEES} examinees, {N_ITERATIONS} iterations, {N_REPE
 
 if SAVE_PLOTS:
     print(f'Creating directory {PLOTS_PATH}...')
-    os.makedirs(PLOTS_PATH)
+    os.makedirs(PLOTS_PATH, exist_ok=True)
 
 if SAVE_RESULTS:
     print(f'Creating directory {RESULTS_PATH}...')
-    os.makedirs(RESULTS_PATH)
+    os.makedirs(RESULTS_PATH, exist_ok=True)
 
 plt.rcParams["figure.figsize"] = PLOT_SIZE
 plt.rcParams["figure.dpi"] = PLOT_DPI
@@ -343,7 +343,7 @@ else:
         if SIMULATION_DATA is not None:
             # save simulation data
             print(f'Saving simulation data to {SIMULATION_DATA}...')
-            os.makedirs(pathlib.Path(SIMULATION_DATA).parent.resolve())
+            os.makedirs(pathlib.Path(SIMULATION_DATA).parent.resolve(), exist_ok=True)
             np.savez(SIMULATION_DATA, alpha_sim=alpha_sim, pi=pi, s_c=s_c, g=g, eta=eta, score=score)
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -455,12 +455,16 @@ for rep in range(repetitions):
 
                 # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
                 likelihood_alpha_given_theta = 1
-                for attribute in range(n_attributes):
-                    likelihood_alpha_i_given_theta = bernoulli.pmf(k=alpha[examinee, attribute],
-                                                                   p=1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (np.prod(theta) - lambda_0[attribute]))))
-                    likelihood_alpha_given_theta *= likelihood_alpha_i_given_theta
+                if USE_EXTENSION_THETA:
+                    for attribute in range(n_attributes):
+                        likelihood_alpha_i_given_theta = bernoulli.pmf(
+                            k=alpha[examinee, attribute],
+                            p=1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (np.prod(theta) - lambda_0[attribute]))))
+                        likelihood_alpha_given_theta *= likelihood_alpha_i_given_theta
+
                 # L[strategy] = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])  # prior
-                prior = mu_weight * binom.pmf(np.sum(alpha[examinee,:]), n_attributes, mu[strategy]) + (1-mu_weight) * likelihood_alpha_given_theta \
+                prior = mu_weight * binom.pmf(np.sum(alpha[examinee,:]), n_attributes, mu[strategy]) \
+                        + (1-mu_weight) * likelihood_alpha_given_theta \
                     if USE_EXTENSION_THETA \
                     else mu[strategy]
                 # prior = np.prod(

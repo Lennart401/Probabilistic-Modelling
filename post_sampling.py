@@ -124,7 +124,7 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
         plt.show()
 
 
-def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='auto', burn_in=1000, real_data=False,
+def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='auto', burn_in=None, real_data=False,
                   show_plots=True):
     # Load chains
     chains = []
@@ -158,6 +158,9 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='au
     print('Average membership:', c_values)
 
     # Compute R-hat for all the chains
+    if burn_in is None:
+        burn_in = s_0_chains[0].shape[0] // 2
+
     r_hat_s_0 = gelman_rubin(s_0_chains, burn_in=burn_in)
     r_hat_s_1 = gelman_rubin(s_1_chains, burn_in=burn_in)
     r_hat_g_0 = gelman_rubin(g_0_chains, burn_in=burn_in)

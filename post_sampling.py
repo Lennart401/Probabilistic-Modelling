@@ -48,7 +48,7 @@ def gelman_rubin(chains, burn_in=0):
     return R_hat
 
 
-def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_path=None):
+def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_path=None, show_plots=True):
     """
     Plot trace and density plot of MCMC chains.
 
@@ -58,8 +58,12 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
         ylim (tuple of floats): The y-axis limits for the trace plots
         figure_title (str): The title of the plot
         save_path: The path to save the plot
+        show_plots (bool): Whether to show the plot
 
     """
+    # Print what is being plotted
+    print(f'Plotting {figure_title}')
+
     # Number of chains
     m = len(next(iter(chains_dict.values())))
 
@@ -103,10 +107,12 @@ def plot_chains(chains_dict, colors=None, ylim=None, figure_title=None, save_pat
         os.makedirs(save_path.resolve().parent, exist_ok=True)
         plt.savefig(save_path.resolve())
 
-    plt.show()
+    if show_plots:
+        plt.show()
 
 
-def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10, burn_in=1000, real_data=False):
+def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10, burn_in=1000, real_data=False,
+                  show_plots=True):
     # Load chains
     chains = []
     for i in range(n_chains):
@@ -221,6 +227,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
             ylim=s_ylim,
             figure_title='Slipping parameter',
             save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping.png' if save_plots else None,
+            show_plots=show_plots,
         )
 
         plot_chains(
@@ -228,6 +235,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
             colors={'Strategy A': g0_color, 'Strategy B': g1_color},
             ylim=g_ylim, figure_title='Guessing parameter',
             save_path=RESULT_PLOTS_FOLDER / study_folder / 'guessing.png' if save_plots else None,
+            show_plots=show_plots,
         )
 
         plot_chains(
@@ -241,6 +249,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
             },
             figure_title='Slipping & Guessing Parameters',
             save_path=RESULT_PLOTS_FOLDER / study_folder / 'slipping_guessing.png' if save_plots else None,
+            show_plots=show_plots,
         )
 
         plot_chains(
@@ -248,6 +257,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
             colors={'Strategy A': s0_color, 'Strategy B': s1_color},
             figure_title='Mixing parameter',
             save_path=RESULT_PLOTS_FOLDER / study_folder / 'mixing.png' if save_plots else None,
+            show_plots=show_plots,
         )
 
         plot_chains(
@@ -255,6 +265,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
             colors={'C': 'mediumorchid'},
             figure_title='Strategy membership parameter mean',
             save_path=RESULT_PLOTS_FOLDER / study_folder / 'c.png' if save_plots else None,
+            show_plots=show_plots,
         )
 
         if mu_weight_chains is not None:
@@ -263,14 +274,12 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains=10,
                 colors={'Mu Weight': 'mediumorchid'},
                 figure_title='Mu Weight',
                 save_path=RESULT_PLOTS_FOLDER / study_folder / 'mu_weight.png' if save_plots else None,
+                show_plots=show_plots,
             )
 
 
 if __name__ == '__main__':
-    process_study('normal-model-20230704-154206', save_plots=True, real_data=True)
-    exit()
-
-    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3'][2:3]
+    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3']
     # get the full folder names from their closest matches in results/
     directory = pathlib.Path('results')
     study_directories = [next(directory.glob(f'{study}*')) for study in studies]

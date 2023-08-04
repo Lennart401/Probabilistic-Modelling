@@ -403,17 +403,21 @@ for rep in range(repetitions):
 
         mu_weight_hyperparameter_1 = 1
         mu_weight_hyperparameter_2 = 1
-
         mu_weights = []
 
         for examinee in range(n_examinees):
             strategy_membership = c[examinee]
             mu_weight_new = beta.rvs(mu_weight_hyperparameter_1, mu_weight_hyperparameter_2)
+            likelihood_alpha_given_theta = 1
 
-            probability_old = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) + (1 - mu_weight) * theta[examinee]
-            probability_new = mu_weight_new * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) + (1 - mu_weight_new) * theta[examinee]
+            for attribute in range(n_attributes):
+                likelihood_alpha_i_given_theta = bernoulli.pmf(k = alpha[examinee, attribute],p=1/(1+np.exp(-1.7*lambda_1[attribute]*(np.prod(theta) - lambda_0[attribute]))))
+                likelihood_alpha_given_theta *= likelihood_alpha_i_given_theta
 
-            likelihood_ratio = probability_new / probability_old
+            probability_old = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) + (1 - mu_weight) * likelihood_alpha_given_theta
+            probability_new = mu_weight_new * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) + (1 - mu_weight_new) * likelihood_alpha_given_theta
+
+            likelihood_ratio = (probability_new * beta.pdf(mu_weight_new, mu_weight_hyperparameter_1,mu_weight_hyperparameter_2)) / (probability_old * beta.pdf(mu_weight, mu_weight_hyperparameter_1,mu_weight_hyperparameter_2))
 
             if likelihood_ratio >= np.random.rand():
                 mu_weights.append(mu_weight_new)

@@ -433,6 +433,7 @@ for rep in range(repetitions):
         for examinee in range(n_examinees):
             # p(c_i = m | all other parameters)
             Lc = np.ones(n_strategies)
+            likelihood_alpha_given_theta = 1
             # TODO parallelize / vectorize
             for strategy in range(n_strategies):
                 likelihood = 1

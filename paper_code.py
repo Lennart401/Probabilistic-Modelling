@@ -27,7 +27,7 @@ SIMULATION_DATA = None  # 'simulation_data/data.npz'
 # Script length variables
 N_EXAMINEES = 500
 N_ITERATIONS = 10000
-N_REPEATS = 50
+N_REPEATS = 10
 
 if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     print('Running in test mode...')
@@ -35,8 +35,8 @@ if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     SAVE_PLOTS = False
     SAVE_RESULTS = False
     PLOT_DPI = 100
-    N_EXAMINEES = 200
-    N_ITERATIONS = 500
+    N_EXAMINEES = 50
+    N_ITERATIONS = 2000
     N_REPEATS = 1
 
 if SAVE_PLOTS:
@@ -743,7 +743,7 @@ for rep in range(repetitions):
     # c - strategy membership
     plt.plot(np.arange(EM), np.mean(c_hat[rep], axis=1))
     plt.ylim([0, 1])
-    plt.suptitle(f'c ({rep})')
+    plt.suptitle(f'c ({rep})') if USE_REAL_DATA else plt.suptitle(f'c ({rep}) - (pi_true: {pi_true})')
     plt.tight_layout()
     if SAVE_PLOTS:
         plt.savefig(f'{PLOTS_PATH}/{rep}_c.png')
@@ -784,7 +784,7 @@ for rep in range(repetitions):
     plt.plot(pi_hat[rep, :, 0], label='strategy 1')
     plt.plot(pi_hat[rep, :, 1], label='strategy 2')
     plt.ylim([0, 1])
-    plt.suptitle(f'pi ({rep})')
+    plt.suptitle(f'pi ({rep})') if USE_REAL_DATA else plt.suptitle(f'pi ({rep}) - (pi_true: {pi_true})')
     plt.legend()
     plt.tight_layout()
     if SAVE_PLOTS:
@@ -928,6 +928,7 @@ for rep in range(repetitions):
             slipping_trace=slipping_trace[rep],
             guessing_trace=guessing_trace[rep],
             mu_weight_hat=mu_weight_hat[rep],
+            pi_true=pi_true if not USE_REAL_DATA else None,
         )
 
     # Keep track of avg values over repetitions

@@ -35,8 +35,8 @@ if int(os.environ.get('USE_TEST_MODE', 0)) == 1:
     SAVE_PLOTS = False
     SAVE_RESULTS = False
     PLOT_DPI = 100
-    N_EXAMINEES = 500
-    N_ITERATIONS = 200
+    N_EXAMINEES = 200
+    N_ITERATIONS = 500
     N_REPEATS = 1
 
 if SAVE_PLOTS:
@@ -57,8 +57,6 @@ pi_hyperparams_simulation = np.array([1, 1]) if not USE_ORIGINAL_MODEL else np.a
 
 true_slipping = 0.3
 true_guessing = 0.1
-
-mu_weight = 0.5  # only used if USE_EXTENSION_THETA is True; determines how much the mu is weighted
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Q MATRICES
@@ -375,6 +373,8 @@ for rep in range(repetitions):
     g = np.array(beta.rvs(1, 2, size=(n_items, n_strategies)) * 0.4 + 0.1)
     c = np.argmax(multinomial.rvs(n=1, p=pi, size=n_examinees), axis=1)
     theta = np.array(beta.rvs(2, 2, size=n_examinees))
+    mu_weight = uniform.rvs(0, 1)
+
     if USE_EXTENSION_LAMBDA:
         lambda_0 = np.array(norm.rvs(loc=0, scale=1, size=n_attributes))
         lambda_1 = np.array(lognorm.rvs(1, loc=1, scale=1, size=n_attributes))
@@ -394,6 +394,10 @@ for rep in range(repetitions):
     # Start the MCMC
     print('\nRepetition: ', rep)
     for WWW in tqdm(range(EM)):
+
+        # -------------------------------------------------------------------------------------------------------------
+        # WHATEVER SAMPLER
+        # -------------------------------------------------------------------------------------------------------------
 
         mu_weight_hyperparameter_1 = 1
         mu_weight_hyperparameter_2 = 1

@@ -462,9 +462,11 @@ for rep in range(repetitions):
                     likelihood_alpha_given_theta = np.prod(
                         bernoulli.pmf(k=alpha[examinee, :], p=1 / (1 + np.exp(-1.7 * lambda_1 * (np.prod(theta) - lambda_0))))
                     )
-                    prior = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy]) + (1 - mu_weight) * likelihood_alpha_given_theta
+                    prior = mu_weight * np.prod(bernoulli.pmf(alpha[examinee, :], mu[strategy])) + (1 - mu_weight) * likelihood_alpha_given_theta
+                    # prior = mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy]) + (1 - mu_weight) * likelihood_alpha_given_theta
                 else:
                     prior = np.prod(bernoulli.pmf(alpha[examinee, :], mu[strategy]))
+                    # prior = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])
                 # prior = np.prod(
                 #     [bernoulli.pmf(alpha[examinee, attribute], prob_alpha) for attribute in range(n_attributes)])
                 Lc[strategy] = prior * likelihood * pi[strategy]
@@ -497,46 +499,37 @@ for rep in range(repetitions):
 
         # draw lambda
         if USE_EXTENSION_LAMBDA:
+            # Pre-compute constant values
+            theta_prod = np.prod(theta)
+            binom_values = np.array([binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[c[examinee]]) for examinee in range(n_examinees)])
+
+            # Loop over attributes
             for attribute in range(n_attributes):
-                # range [ loc, loc + scale ]
-                lower = lambda_0[attribute] - 1
-                upper = lambda_0[attribute] + 1
-                lambda_0_new = uniform.rvs(loc=lower, scale=upper - lower)
+                lower_0 = lambda_0[attribute] - 1
+                upper_0 = lambda_0[attribute] + 1
+                lambda_0_new = uniform.rvs(loc=lower_0, scale=upper_0 - lower_0)
 
-                lower = lambda_1[attribute] - 1
-                upper = lambda_1[attribute] + 1
-                lambda_1_new = uniform.rvs(loc=lower, scale=upper - lower)
+                lower_1 = lambda_1[attribute] - 1
+                upper_1 = lambda_1[attribute] + 1
+                lambda_1_new = uniform.rvs(loc=lower_1, scale=upper_1 - lower_1)
 
-                p_alpha_lambda_all = np.zeros(n_examinees)
-                p_alpha_lambda_new_all = np.zeros(n_examinees)
+                p_old = 1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (theta_prod - lambda_0[attribute])))
+                p_new = 1 / (1 + np.exp(-1.7 * lambda_1_new * (theta_prod - lambda_0_new)))
 
-                for examinee in range(n_examinees):
-                    strategy_membership = c[examinee]
+                probability_old = bernoulli.pmf(k=alpha[:, attribute], p=p_old)
+                probability_new = bernoulli.pmf(k=alpha[:, attribute], p=p_new)
 
-                    probability_old = bernoulli.pmf(
-                        k=alpha[examinee, attribute],
-                        p=1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (np.prod(theta) - lambda_0[attribute]))))
-                    probability_new = bernoulli.pmf(
-                        k=alpha[examinee, attribute],
-                        p=1 / (1 + np.exp(-1.7 * lambda_1_new * (np.prod(theta) - lambda_0_new))))
-
-                    p_alpha_lambda_new_all[examinee] = \
-                        mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
-                        + (1 - mu_weight) * probability_new
-                    p_alpha_lambda_all[examinee] = \
-                        mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
-                        + (1 - mu_weight) * probability_old
+                p_alpha_lambda_all = mu_weight * binom_values + (1 - mu_weight) * probability_old
+                p_alpha_lambda_new_all = mu_weight * binom_values + (1 - mu_weight) * probability_new
 
                 p_alpha_lambda = np.exp(np.sum(np.log(p_alpha_lambda_all)))
                 p_alpha_lambda_new = np.exp(np.sum(np.log(p_alpha_lambda_new_all)))
 
-                likelihood_0 = (p_alpha_lambda_new * norm.pdf(lambda_0_new, loc=0, scale=1)) / \
-                               (p_alpha_lambda * norm.pdf(lambda_0[attribute], loc=0, scale=1))
+                likelihood_0 = (p_alpha_lambda_new * norm.pdf(lambda_0_new, loc=0, scale=1)) / (p_alpha_lambda * norm.pdf(lambda_0[attribute], loc=0, scale=1))
                 if likelihood_0 >= np.random.rand():
                     lambda_0[attribute] = lambda_0_new
 
-                likelihood_1 = (np.prod(p_alpha_lambda_new) * lognorm.pdf(x=lambda_1_new, s=1, loc=0, scale=1)) / \
-                               (np.prod(p_alpha_lambda) * lognorm.pdf(x=lambda_1[attribute], s=1, loc=0, scale=1))
+                likelihood_1 = (np.prod(p_alpha_lambda_new) * lognorm.pdf(x=lambda_1_new, s=1, loc=0, scale=1)) / (np.prod(p_alpha_lambda) * lognorm.pdf(x=lambda_1[attribute], s=1, loc=0, scale=1))
                 if likelihood_1 >= np.random.rand():
                     lambda_1[attribute] = lambda_1_new
 

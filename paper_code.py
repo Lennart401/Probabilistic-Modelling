@@ -19,8 +19,8 @@ PLOT_DPI = 600
 SAVE_RESULTS = True
 RESULTS_PATH = f'results/{RUN_NAME}-{START_TIME}'
 USE_ORIGINAL_MODEL = False
-USE_EXTENSION_LAMBDA = True
-USE_EXTENSION_THETA = True
+USE_EXTENSION_LAMBDA = False
+USE_EXTENSION_THETA = False
 USE_REAL_DATA = False
 SIMULATION_DATA = None  # 'simulation_data/data.npz'
 
@@ -507,8 +507,8 @@ for rep in range(repetitions):
                 upper = lambda_1[attribute] + 1
                 lambda_1_new = uniform.rvs(loc=lower, scale=upper - lower)
 
-                p_alpha_lambda_all = []
-                p_alpha_lambda_new_all = []
+                p_alpha_lambda_all = np.zeros(n_examinees)
+                p_alpha_lambda_new_all = np.zeros(n_examinees)
 
                 for examinee in range(n_examinees):
                     strategy_membership = c[examinee]
@@ -520,15 +520,12 @@ for rep in range(repetitions):
                         k=alpha[examinee, attribute],
                         p=1 / (1 + np.exp(-1.7 * lambda_1_new * (np.prod(theta) - lambda_0_new))))
 
-                    p_alpha_lambda_new_all.append(
-                        mu_weight
-                        * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership])
-                        + (1 - mu_weight) * probability_new)
-
-                    p_alpha_lambda_all.append(
-                        mu_weight
-                        * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership])
-                        + (1 - mu_weight) * probability_old)
+                    p_alpha_lambda_new_all[examinee] = \
+                        mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
+                        + (1 - mu_weight) * probability_new
+                    p_alpha_lambda_all[examinee] = \
+                        mu_weight * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
+                        + (1 - mu_weight) * probability_old
 
                 p_alpha_lambda = np.exp(np.sum(np.log(p_alpha_lambda_all)))
                 p_alpha_lambda_new = np.exp(np.sum(np.log(p_alpha_lambda_new_all)))

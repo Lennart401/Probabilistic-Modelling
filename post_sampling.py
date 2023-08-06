@@ -253,6 +253,9 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='au
         g0_color = 'lightcoral'
         g1_color = 'khaki'
 
+        if real_data:
+            print()  # empty line only when real data, since there is no newline line with the alpha diff plot
+
         plot_chains(
             chains_dict={'Strategy A': s_0_chains, 'Strategy B': s_1_chains},
             colors={'Strategy A': s0_color, 'Strategy B': s1_color},

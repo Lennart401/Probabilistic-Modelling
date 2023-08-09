@@ -54,8 +54,9 @@ plt.rcParams["figure.dpi"] = PLOT_DPI
 
 # Simulation parameters
 mu_hyperparameter_1 = mu_hyperparameter_2 = 0.5
-pi_hyperparams = np.array([1, 1]) if not USE_ORIGINAL_MODEL else np.array([0.01, 0.01])
-pi_hyperparams_simulation = np.array([3, 3]) if not USE_ORIGINAL_MODEL else np.array([0.01, 0.01])
+# pi_hyperparams = np.array([1, 1]) if not USE_ORIGINAL_MODEL else np.array([0.01, 0.01])
+pi_hyperparams = np.array([0.1, 0.1]) if not USE_ORIGINAL_MODEL else np.array([0.01, 0.01])
+pi_hyperparams_simulation = np.array([3, 3])
 
 true_slipping = 0.3
 true_guessing = 0.1
@@ -968,8 +969,32 @@ SD_guessing = 1 / N_REPEATS * np.sum([np.std(guessing[rep, BI:]) for rep in rang
 SD_pi = 1 / N_REPEATS * np.sum([np.std(pi_hat[rep, BI:, 0]) for rep in range(N_REPEATS)])
 
 print(f'Bias slipping 1: {Bias_slipping_1} & Bias slipping 2: {Bias_slipping_2}; Bias guessing 1: {Bias_guessing_1} & Bias guessing 2: {Bias_guessing_2}; Bias pi: {Bias_pi}')
+# Print again but as rows
+print()
+print(Bias_slipping_1)
+print(Bias_slipping_2)
+print(Bias_guessing_1)
+print(Bias_guessing_2)
+print(Bias_pi)
+print()
+
 print(f'MSE slipping 1: {MSE_slipping_1} & MSE slipping 2: {MSE_slipping_2}; MSE guessing 1: {MSE_guessing_1} & MSE guessing 2: {MSE_guessing_2}; MSE pi: {MSE_pi}')
+# Print again but as rows
+print()
+print(MSE_slipping_1)
+print(MSE_slipping_2)
+print(MSE_guessing_1)
+print(MSE_guessing_2)
+print(MSE_pi)
+print()
+
 print(f'SD slipping: {SD_slipping}; SD guessing: {SD_guessing}; SD pi: {SD_pi}')
+# Print again but as rows
+print()
+print(SD_slipping)
+print(SD_guessing)
+print(SD_pi)
+print()
 
 if not USE_REAL_DATA:
     # Attribute Recovery Error Measure

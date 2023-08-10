@@ -502,7 +502,6 @@ for rep in range(repetitions):
         if USE_EXTENSION_LAMBDA:
             # Pre-compute constant values
             theta_prod = np.prod(theta)
-            binom_values = np.array([binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[c[examinee]]) for examinee in range(n_examinees)])
 
             # Loop over attributes
             for attribute in range(n_attributes):
@@ -517,11 +516,8 @@ for rep in range(repetitions):
                 p_old = 1 / (1 + np.exp(-1.7 * lambda_1[attribute] * (theta_prod - lambda_0[attribute])))
                 p_new = 1 / (1 + np.exp(-1.7 * lambda_1_new * (theta_prod - lambda_0_new)))
 
-                probability_old = bernoulli.pmf(k=alpha[:, attribute], p=p_old)
-                probability_new = bernoulli.pmf(k=alpha[:, attribute], p=p_new)
-
-                p_alpha_lambda_all = mu_weight * binom_values + (1 - mu_weight) * probability_old
-                p_alpha_lambda_new_all = mu_weight * binom_values + (1 - mu_weight) * probability_new
+                p_alpha_lambda_all = bernoulli.pmf(k=alpha[:, attribute], p=p_old)
+                p_alpha_lambda_new_all = bernoulli.pmf(k=alpha[:, attribute], p=p_new)
 
                 p_alpha_lambda = np.exp(np.sum(np.log(p_alpha_lambda_all)))
                 p_alpha_lambda_new = np.exp(np.sum(np.log(p_alpha_lambda_new_all)))

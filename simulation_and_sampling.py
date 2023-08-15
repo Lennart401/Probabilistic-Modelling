@@ -351,23 +351,23 @@ else:
 # START WITH MCMC SAMPLING
 # ---------------------------------------------------------------------------------------------------------------------
 
-EM = N_ITERATIONS
-BI = int(EM / 2)
-repetitions = N_REPEATS  # number of repetitions
+n_iterations = N_ITERATIONS
+n_burn_in = int(n_iterations / 2)
+n_chains = N_REPEATS  # number of repetitions
 
 # track c, s, g
-c_hat = np.zeros((repetitions, EM, n_examinees))
-pi_hat = np.zeros((repetitions, EM, n_strategies))
-mu_hat = np.zeros((repetitions, EM, n_strategies))
-slipping = np.zeros((repetitions, EM, n_items, n_strategies))
-guessing = np.zeros((repetitions, EM, n_items, n_strategies))
-alpha_hat = np.zeros((repetitions, EM, n_examinees, n_attributes))
-theta_hat = np.zeros((repetitions, EM, n_examinees))
-lambda_0_hat = np.zeros((repetitions, EM, n_attributes))
-lambda_1_hat = np.zeros((repetitions, EM, n_attributes))
-mu_weight_hat = np.zeros((repetitions, EM))
+c_hat = np.zeros((n_chains, n_iterations, n_examinees))
+pi_hat = np.zeros((n_chains, n_iterations, n_strategies))
+mu_hat = np.zeros((n_chains, n_iterations, n_strategies))
+slipping = np.zeros((n_chains, n_iterations, n_items, n_strategies))
+guessing = np.zeros((n_chains, n_iterations, n_items, n_strategies))
+alpha_hat = np.zeros((n_chains, n_iterations, n_examinees, n_attributes))
+theta_hat = np.zeros((n_chains, n_iterations, n_examinees))
+lambda_0_hat = np.zeros((n_chains, n_iterations, n_attributes))
+lambda_1_hat = np.zeros((n_chains, n_iterations, n_attributes))
+mu_weight_hat = np.zeros((n_chains, n_iterations))
 
-for rep in range(repetitions):
+for chain in range(n_chains):
     # Initial values
     alpha = np.array(bernoulli.rvs(0.5, size=(n_examinees, n_attributes)))
     mu = np.array(beta.rvs(mu_hyperparameter_1, mu_hyperparameter_2, size=n_strategies))
@@ -395,8 +395,8 @@ for rep in range(repetitions):
     alpha_diff = np.zeros((n_examinees, n_attributes))
 
     # Start the MCMC
-    print('\nRepetition: ', rep)
-    for WWW in tqdm(range(EM)):
+    print('\nRepetition: ', chain)
+    for iteration in tqdm(range(n_iterations)):
 
         # -------------------------------------------------------------------------------------------------------------
         # METROPOLIS-HASTINGS SAMPLING
@@ -425,7 +425,7 @@ for rep in range(repetitions):
                     mu_weights.append(mu_weight_new)
 
             mu_weight = np.mean(mu_weights)
-            mu_weight_hat[rep, WWW] = mu_weight
+            mu_weight_hat[chain, iteration] = mu_weight
 
         # -------------------------------------------------------------------------------------------------------------
         # GIBBS SAMPLING
@@ -438,13 +438,13 @@ for rep in range(repetitions):
             pi = 1 - dirichlet.rvs(pi_hyperparams + membership_counts, size=1).flatten()
         else:
             pi = dirichlet.rvs(pi_hyperparams + membership_counts, size=1).flatten()
-        pi_hat[rep, WWW] = pi
+        pi_hat[chain, iteration] = pi
 
         # draw c (strategy membership parameter), using Gibbs Sampler (always accept, draw from conditional posterior)
         # TODO parallelize
         for examinee in range(n_examinees):
             # p(c_i = m | all other parameters)
-            Lc = np.ones(n_strategies)
+            posterior = np.ones(n_strategies)
             # TODO parallelize / vectorize
             for strategy in range(n_strategies):
                 likelihood = 1
@@ -470,13 +470,13 @@ for rep in range(repetitions):
                     # prior = binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy])
                 # prior = np.prod(
                 #     [bernoulli.pmf(alpha[examinee, attribute], prob_alpha) for attribute in range(n_attributes)])
-                Lc[strategy] = prior * likelihood * pi[strategy]
+                posterior[strategy] = prior * likelihood * pi[strategy]
 
             # c_hat[examinee, :] = 10 ** 5 * Lc
             # pp = Lc[1] / (Lc[0] + Lc[1])
             # print(WWW, examinee, pp, Lc, L, LL, p)
-            c[examinee] = np.argmax(multinomial.rvs(1, Lc / np.sum(Lc)))  # np.random.binomial(1, pp)
-            c_hat[rep, WWW, examinee] = c[examinee]
+            c[examinee] = np.argmax(multinomial.rvs(1, posterior / np.sum(posterior)))  # np.random.binomial(1, pp)
+            c_hat[chain, iteration, examinee] = c[examinee]
 
         # draw mu (strategy membership parameter), using Gibbs Sampler (always accept, draw from conditional posterior)
         num_attributes = np.sum(alpha, axis=1)
@@ -492,7 +492,7 @@ for rep in range(repetitions):
                 np.random.beta(attr_sum[m] + mu_hyperparameter_1, alpha[c == m].size - attr_sum[m] + mu_hyperparameter_2)
                 for m in range(n_strategies)
             ]
-        mu_hat[rep, WWW] = mu
+        mu_hat[chain, iteration] = mu
 
         # -------------------------------------------------------------------------------------------------------------
         # METROPOLIS-HASTINGS SAMPLING
@@ -530,8 +530,8 @@ for rep in range(repetitions):
                 if likelihood_1 >= np.random.rand():
                     lambda_1[attribute] = lambda_1_new
 
-            lambda_0_hat[rep, WWW] = lambda_0
-            lambda_1_hat[rep, WWW] = lambda_1
+            lambda_0_hat[chain, iteration] = lambda_0
+            lambda_1_hat[chain, iteration] = lambda_1
 
         # draw theta
         if USE_EXTENSION_THETA:
@@ -571,7 +571,7 @@ for rep in range(repetitions):
                 if likelihood >= np.random.rand():
                     theta[examinee] = 1 / (1 + np.exp(-theta_new))
 
-                theta_hat[rep, WWW, examinee] = theta[examinee]
+                theta_hat[chain, iteration, examinee] = theta[examinee]
 
         # draw alpha (latent skill vector), using Metropolis-Hastings (accept/reject)
         # TODO parallelize
@@ -586,7 +586,7 @@ for rep in range(repetitions):
                     k=alpha[examinee, :],
                     p=1 / (1 + np.exp(-1.7 * lambda_1 * (theta[examinee] - lambda_0)))))
 
-                p_NewAlpha_given_Theta = np.prod(bernoulli.pmf(
+                p_new_alpha_given_theta = np.prod(bernoulli.pmf(
                     k=alpha_new,
                     p=1 / (1 + np.exp(-1.7 * lambda_1 * (theta[examinee] - lambda_0)))))
 
@@ -594,7 +594,7 @@ for rep in range(repetitions):
                 probability = mu_weight \
                     * binom.pmf(np.sum(alpha_new), n_attributes, mu[strategy_membership]) \
                     + (1 - mu_weight) \
-                    * p_NewAlpha_given_Theta
+                    * p_new_alpha_given_theta
 
                 probability_old = mu_weight \
                     * binom.pmf(np.sum(alpha[examinee, :]), n_attributes, mu[strategy_membership]) \
@@ -635,7 +635,7 @@ for rep in range(repetitions):
             if p3 >= np.random.rand():
                 alpha[examinee, :] = alpha_new
 
-            alpha_hat[rep, WWW, examinee] = alpha[examinee]
+            alpha_hat[chain, iteration, examinee] = alpha[examinee]
 
         # draw s and g (item parameters), using Metropolis-Hastings (accept/reject)
         s_c_new = np.zeros((n_items, n_strategies))
@@ -675,26 +675,26 @@ for rep in range(repetitions):
                     g[item, strategy] = g_new[item, strategy]
                     s_c[item, strategy] = s_c_new[item, strategy]
 
-        slipping[rep, WWW] = s_c
-        guessing[rep, WWW] = g
+        slipping[chain, iteration] = s_c
+        guessing[chain, iteration] = g
 
         # If we are past the burn-in period, the sum alpha, s and g to get an average value of them
-        if WWW >= EM - BI:
+        if iteration >= n_iterations - n_burn_in:
             bi_counter += 1
             # TODO parallelize / vectorize
             alpha_sum += alpha
             s_c_sum += s_c
             g_sum += g
 
-    alpha_avg = alpha_sum / BI
-    s_c_avg = s_c_sum / BI
+    alpha_avg = alpha_sum / n_burn_in
+    s_c_avg = s_c_sum / n_burn_in
     s_avg = 1 - s_c_avg
-    g_avg = g_sum / BI
+    g_avg = g_sum / n_burn_in
 
     alpha_final = np.round(alpha_avg)
 
-    slipping_trace = np.mean(1 - slipping[rep], axis=1)
-    guessing_trace = np.mean(guessing[rep], axis=1)
+    slipping_trace = np.mean(1 - slipping[chain], axis=1)
+    guessing_trace = np.mean(guessing[chain], axis=1)
 
     eta = np.zeros(shape=(n_examinees, n_items, n_strategies))
     for i in range(n_examinees):
@@ -705,9 +705,9 @@ for rep in range(repetitions):
     p_MMS = np.zeros((n_examinees, n_items))
     score_pred = np.zeros((n_examinees, n_items))
 
-    slipping_mean = np.mean(slipping[rep, BI:], axis=0)
-    guessing_mean = np.mean(guessing[rep, BI:], axis=0)
-    pi_mean = np.mean(pi_hat[rep, BI:], axis=0)
+    slipping_mean = np.mean(slipping[chain, n_burn_in:], axis=0)
+    guessing_mean = np.mean(guessing[chain, n_burn_in:], axis=0)
+    pi_mean = np.mean(pi_hat[chain, n_burn_in:], axis=0)
 
     # mixture multiple strategy model
     for examinee in range(n_examinees):
@@ -727,68 +727,68 @@ for rep in range(repetitions):
     # -----------------------------------------------------------------------------------------------------------------
 
     # c - strategy membership
-    plt.plot(np.arange(EM), np.mean(c_hat[rep], axis=1))
+    plt.plot(np.arange(n_iterations), np.mean(c_hat[chain], axis=1))
     plt.ylim([0, 1])
-    plt.suptitle(f'c ({rep})') if USE_REAL_DATA else plt.suptitle(f'c ({rep}) - (pi_true: {pi_true})')
+    plt.suptitle(f'c ({chain})') if USE_REAL_DATA else plt.suptitle(f'c ({chain}) - (pi_true: {pi_true})')
     plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'{PLOTS_PATH}/{rep}_c.png')
+        plt.savefig(f'{PLOTS_PATH}/{chain}_c.png')
     if SHOW_PLOTS:
         plt.show()
     plt.clf()
     plt.close()
 
     # mu_weight
-    plt.plot(np.arange(EM), mu_weight_hat[rep])
-    plt.suptitle(f'mu_weight ({rep})')
+    plt.plot(np.arange(n_iterations), mu_weight_hat[chain])
+    plt.suptitle(f'mu_weight ({chain})')
     plt.ylim([0, 1])
     plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'{PLOTS_PATH}/{rep}_mu_weight.png')
+        plt.savefig(f'{PLOTS_PATH}/{chain}_mu_weight.png')
     if SHOW_PLOTS:
         plt.show()
     plt.clf()
     plt.close()
 
     # s and g - slipping and guessing parameters
-    plt.plot(np.arange(EM), slipping_trace[:, 0], label='slipping strategy 1')
-    plt.plot(np.arange(EM), slipping_trace[:, 1], label='slipping strategy 2')
-    plt.plot(np.arange(EM), guessing_trace[:, 0], label='guessing strategy 1')
-    plt.plot(np.arange(EM), guessing_trace[:, 1], label='guessing strategy 2')
+    plt.plot(np.arange(n_iterations), slipping_trace[:, 0], label='slipping strategy 1')
+    plt.plot(np.arange(n_iterations), slipping_trace[:, 1], label='slipping strategy 2')
+    plt.plot(np.arange(n_iterations), guessing_trace[:, 0], label='guessing strategy 1')
+    plt.plot(np.arange(n_iterations), guessing_trace[:, 1], label='guessing strategy 2')
     plt.ylim([0, 0.5])
-    plt.suptitle(f'slipping and guessing ({rep})')
+    plt.suptitle(f'slipping and guessing ({chain})')
     plt.legend()
     plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'{PLOTS_PATH}/{rep}_s_g.png')
+        plt.savefig(f'{PLOTS_PATH}/{chain}_s_g.png')
     if SHOW_PLOTS:
         plt.show()
     plt.clf()
     plt.close()
 
     # pi - strategy mixing parameter
-    plt.plot(pi_hat[rep, :, 0], label='strategy 1')
-    plt.plot(pi_hat[rep, :, 1], label='strategy 2')
+    plt.plot(pi_hat[chain, :, 0], label='strategy 1')
+    plt.plot(pi_hat[chain, :, 1], label='strategy 2')
     plt.ylim([0, 1])
-    plt.suptitle(f'pi ({rep})') if USE_REAL_DATA else plt.suptitle(f'pi ({rep}) - (pi_true: {pi_true})')
+    plt.suptitle(f'pi ({chain})') if USE_REAL_DATA else plt.suptitle(f'pi ({chain}) - (pi_true: {pi_true})')
     plt.legend()
     plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'{PLOTS_PATH}/{rep}_pi.png')
+        plt.savefig(f'{PLOTS_PATH}/{chain}_pi.png')
     if SHOW_PLOTS:
         plt.show()
     plt.clf()
     plt.close()
 
     # mu - attribute mean
-    plt.plot(mu_hat[rep, :, 0], label='strategy 1')
-    plt.plot(mu_hat[rep, :, 1], label='strategy 2')
+    plt.plot(mu_hat[chain, :, 0], label='strategy 1')
+    plt.plot(mu_hat[chain, :, 1], label='strategy 2')
     plt.ylim([0, 1])
-    plt.suptitle(f'mu ({rep})')
+    plt.suptitle(f'mu ({chain})')
     plt.legend()
     plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'{PLOTS_PATH}/{rep}_mu.png')
+        plt.savefig(f'{PLOTS_PATH}/{chain}_mu.png')
     if SHOW_PLOTS:
         plt.show()
     plt.clf()
@@ -796,12 +796,12 @@ for rep in range(repetitions):
 
     # theta - general knowledge
     if USE_EXTENSION_THETA:
-        plt.plot(np.arange(EM), np.mean(theta_hat[rep], axis=1))
+        plt.plot(np.arange(n_iterations), np.mean(theta_hat[chain], axis=1))
         plt.ylim([0, 1])
-        plt.suptitle(f'theta ({rep})')
+        plt.suptitle(f'theta ({chain})')
         plt.tight_layout()
         if SAVE_PLOTS:
-            plt.savefig(f'{PLOTS_PATH}/{rep}_theta.png')
+            plt.savefig(f'{PLOTS_PATH}/{chain}_theta.png')
         if SHOW_PLOTS:
             plt.show()
         plt.clf()
@@ -810,13 +810,13 @@ for rep in range(repetitions):
     # lambda - attribute weight
     if USE_EXTENSION_THETA:
         for attribute in range(n_attributes):
-            plt.plot(np.arange(EM), lambda_0_hat[rep, :, attribute], c='r', label=f'Lambda 0 [{attribute}]')
-            plt.plot(np.arange(EM), lambda_1_hat[rep, :, attribute], c='b', label=f'Lambda 1 [{attribute}]')
-        plt.suptitle(f'lambda ({rep})')
+            plt.plot(np.arange(n_iterations), lambda_0_hat[chain, :, attribute], c='r', label=f'Lambda 0 [{attribute}]')
+            plt.plot(np.arange(n_iterations), lambda_1_hat[chain, :, attribute], c='b', label=f'Lambda 1 [{attribute}]')
+        plt.suptitle(f'lambda ({chain})')
         plt.tight_layout()
         plt.legend()
         if SAVE_PLOTS:
-            plt.savefig(f'{PLOTS_PATH}/{rep}_lambda.png')
+            plt.savefig(f'{PLOTS_PATH}/{chain}_lambda.png')
         if SHOW_PLOTS:
             plt.show()
         plt.clf()
@@ -833,7 +833,7 @@ for rep in range(repetitions):
         plt.colorbar(location=colorbar_location)
         plt.tight_layout()
         if SAVE_PLOTS:
-            plt.savefig(f'{PLOTS_PATH}/{rep}_alpha.png')
+            plt.savefig(f'{PLOTS_PATH}/{chain}_alpha.png')
         if SHOW_PLOTS:
             plt.show()
         plt.clf()
@@ -854,10 +854,10 @@ for rep in range(repetitions):
         fig.colorbar(alpha_diff_ax, location=colorbar_location)
         fig.colorbar(alpha_sim_ax, location=colorbar_location)
         fig.colorbar(alpha_ax, location=colorbar_location)
-        plt.suptitle(f'alpha_sim vs. alpha ({rep})')
+        plt.suptitle(f'alpha_sim vs. alpha ({chain})')
         plt.tight_layout()
         if SAVE_PLOTS:
-            plt.savefig(f'{PLOTS_PATH}/{rep}_alpha.png')
+            plt.savefig(f'{PLOTS_PATH}/{chain}_alpha.png')
         if SHOW_PLOTS:
             plt.show()
         plt.clf()
@@ -879,10 +879,10 @@ for rep in range(repetitions):
     fig.colorbar(score_pred_ax, location=colorbar_location)
     fig.colorbar(p_MMS_ax, location=colorbar_location)
     fig.colorbar(score_diff_ax, location=colorbar_location)
-    plt.suptitle(f'score vs. p_MMS ({rep})')
+    plt.suptitle(f'score vs. p_MMS ({chain})')
     plt.tight_layout()
     if SAVE_PLOTS:
-        plt.savefig(f'{PLOTS_PATH}/{rep}_p_MMS.png')
+        plt.savefig(f'{PLOTS_PATH}/{chain}_p_MMS.png')
     if SHOW_PLOTS:
         plt.show()
     plt.clf()
@@ -894,16 +894,16 @@ for rep in range(repetitions):
 
     if SAVE_RESULTS:
         np.savez(
-            f'{RESULTS_PATH}/{rep}.npz',
-            c_hat=c_hat[rep],
-            pi_hat=pi_hat[rep],
-            mu_hat=mu_hat[rep],
-            slipping=slipping[rep],
-            guessing=guessing[rep],
-            alpha_hat=alpha_hat[rep],
-            theta_hat=theta_hat[rep],
-            lambda_0_hat=lambda_0_hat[rep],
-            lambda_1_hat=lambda_1_hat[rep],
+            f'{RESULTS_PATH}/{chain}.npz',
+            c_hat=c_hat[chain],
+            pi_hat=pi_hat[chain],
+            mu_hat=mu_hat[chain],
+            slipping=slipping[chain],
+            guessing=guessing[chain],
+            alpha_hat=alpha_hat[chain],
+            theta_hat=theta_hat[chain],
+            lambda_0_hat=lambda_0_hat[chain],
+            lambda_1_hat=lambda_1_hat[chain],
             score=score,
             score_pred=score_pred,
             score_diff=score_diff,
@@ -911,29 +911,29 @@ for rep in range(repetitions):
             alpha_sim=alpha_sim if not USE_REAL_DATA else None,
             alpha_final=alpha_final,
             alpha_diff=alpha_diff if not USE_REAL_DATA else None,
-            slipping_trace=slipping_trace[rep],
-            guessing_trace=guessing_trace[rep],
-            mu_weight_hat=mu_weight_hat[rep],
+            slipping_trace=slipping_trace[chain],
+            guessing_trace=guessing_trace[chain],
+            mu_weight_hat=mu_weight_hat[chain],
             pi_true=pi_true if not USE_REAL_DATA else None,
         )
 
     # Keep track of avg values over repetitions
-    pi_avg[rep] = pi_mean[0]
-    slipping_traces[rep, :, :] = slipping_trace
-    guessing_traces[rep, :, :] = guessing_trace
-    slipping_trace_avg[rep] = np.mean(slipping_trace, axis=0)
-    guessing_trace_avg[rep] = np.mean(guessing_trace, axis=0)
+    pi_avg[chain] = pi_mean[0]
+    slipping_traces[chain, :, :] = slipping_trace
+    guessing_traces[chain, :, :] = guessing_trace
+    slipping_trace_avg[chain] = np.mean(slipping_trace, axis=0)
+    guessing_trace_avg[chain] = np.mean(guessing_trace, axis=0)
 
 # -----------------------------------------------------------------------------------------------------------------
 # ERROR MEASURES
 # -----------------------------------------------------------------------------------------------------------------
 
 # Plot Parameter Recovery
-for rep in range(N_REPEATS):
-    plt.plot(np.arange(EM), slipping_traces[rep, :, 0], label='slipping strategy 1')
-    plt.plot(np.arange(EM), slipping_traces[rep, :, 1], label='slipping strategy 2')
-    plt.plot(np.arange(EM), guessing_traces[rep, :, 0], label='guessing strategy 1')
-    plt.plot(np.arange(EM), guessing_traces[rep, :, 1], label='guessing strategy 2')
+for chain in range(N_REPEATS):
+    plt.plot(np.arange(n_iterations), slipping_traces[chain, :, 0], label='slipping strategy 1')
+    plt.plot(np.arange(n_iterations), slipping_traces[chain, :, 1], label='slipping strategy 2')
+    plt.plot(np.arange(n_iterations), guessing_traces[chain, :, 0], label='guessing strategy 1')
+    plt.plot(np.arange(n_iterations), guessing_traces[chain, :, 1], label='guessing strategy 2')
 plt.ylim([0, 0.5])
 plt.suptitle(f'slipping and guessing over all reps)')
 # plt.legend()
@@ -960,9 +960,9 @@ else:
     MSE_pi = None
 
 # SD
-SD_slipping = 1 / N_REPEATS * np.sum([np.std(slipping[rep, BI:]) for rep in range(N_REPEATS)])
-SD_guessing = 1 / N_REPEATS * np.sum([np.std(guessing[rep, BI:]) for rep in range(N_REPEATS)])
-SD_pi = 1 / N_REPEATS * np.sum([np.std(pi_hat[rep, BI:, 0]) for rep in range(N_REPEATS)])
+SD_slipping = 1 / N_REPEATS * np.sum([np.std(slipping[rep, n_burn_in:]) for rep in range(N_REPEATS)])
+SD_guessing = 1 / N_REPEATS * np.sum([np.std(guessing[rep, n_burn_in:]) for rep in range(N_REPEATS)])
+SD_pi = 1 / N_REPEATS * np.sum([np.std(pi_hat[rep, n_burn_in:, 0]) for rep in range(N_REPEATS)])
 
 print(f'Bias slipping 1: {Bias_slipping_1} & Bias slipping 2: {Bias_slipping_2}; Bias guessing 1: {Bias_guessing_1} & Bias guessing 2: {Bias_guessing_2}; Bias pi: {Bias_pi}')
 # Print again but as rows

@@ -153,6 +153,7 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='au
     pi_1_chains = [chain['pi_hat'][:, 1] for chain in chains]
     c_chains = [np.mean(chain['c_hat'], axis=1) for chain in chains]
     mu_weight_chains = [chain['mu_weight_hat'] for chain in chains] if 'mu_weight_hat' in chains[0] else None
+    score_diff_chains = [chain['score_diff'] for chain in chains]
 
     c_values = np.mean(np.stack([np.unique(chain['c_hat'], return_counts=True)[1] / chain['c_hat'].shape[0] for chain in chains]), axis=0)
     print('Average membership:', c_values)
@@ -183,6 +184,10 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='au
     print('\nCopy and paste into google sheets:')
     for _, value in r_hat_series.items():
         print(value)
+
+    # Score accuracy
+    score_avg_acc = np.mean([np.mean(1 - score_diff) for score_diff in score_diff_chains])
+    print(f'\nScore accuracy: {score_avg_acc}')
 
     # Compute alpha diff error measures
     if not real_data:
@@ -314,11 +319,11 @@ def process_study(study_folder, save_plots=False, skip_plots=False, n_chains='au
 
 
 if __name__ == '__main__':
-    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3']
+    studies = ['s1_500', 's1_1000', 's1_2000', 's2_20', 's2_30', 's3'][:1]
     # get the full folder names from their closest matches in results/
     directory = pathlib.Path('results')
     study_directories = [next(directory.glob(f'{study}*')) for study in studies]
 
     for study_folder in study_directories:
         print(f'\nProcessing {study_folder}')
-        process_study(study_folder.name, save_plots=True)
+        process_study(study_folder.name, save_plots=False, show_plots=False)
